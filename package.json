@@ -32,12 +32,15 @@
     "btb:webhooks": "tsx scripts/setup-webhooks.ts"
   },
   "dependencies": {
+    "@hono/node-server": "^1.19.11",
     "@openai/apps-sdk-ui": "^0.2.1",
     "@tanstack/react-query": "^5.90.21",
     "cors": "^2.8.6",
+    "dotenv": "^17.3.1",
     "express": "^5.2.1",
     "graphql": "^16.13.1",
     "graphql-request": "^7.4.0",
+    "hono": "^4.12.8",
     "mcp-use": "latest",
     "react": "^19.2.4",
     "react-dom": "^19.2.4",
