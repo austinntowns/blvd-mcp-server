@@ -9,7 +9,12 @@ import "dotenv/config";
 import { Hono } from "hono";
 import { serve } from "@hono/node-server";
 import { readFileSync, writeFileSync, existsSync } from "fs";
-import { join } from "path";
+import { join, dirname } from "path";
+import { fileURLToPath } from "url";
+
+// ESM __dirname equivalent
+const __filename = fileURLToPath(import.meta.url);
+const __dirname = dirname(__filename);
 import {
   getLocations,
   getShifts,
@@ -92,8 +97,8 @@ async function withRetry<T>(fn: () => Promise<T>, maxRetries = 10, baseDelay = 5
 }
 
 // Enrollment file path
-const ENROLLMENT_FILE = join(import.meta.dirname || ".", "enrolled-locations.json");
-const CHANGELOG_FILE = join(import.meta.dirname || ".", "btb-changelog.json");
+const ENROLLMENT_FILE = join(__dirname, "enrolled-locations.json");
+const CHANGELOG_FILE = join(__dirname, "btb-changelog.json");
 
 interface EnrollmentData {
   locations: string[];
