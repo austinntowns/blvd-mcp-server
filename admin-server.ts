@@ -2255,11 +2255,18 @@ app.post("/webhook/boulevard", async (c) => {
         }
       }
 
-      // AUTO-ADD: Add 30min BTB when there's 90+ minutes of space at start/end
-      if (analysis.startAutoAdd && !analysis.startBlock) {
+      // AUTO-ADD: Tiered BTB based on gap size
+      // 120+ min gap → 60 min BTB
+      // 90-119 min gap → 30 min BTB
+      const startGap = analysis.minutesToFirstAppointment;
+      const endGap = analysis.minutesAfterLastAppointment;
+
+      // Check start of shift
+      if (!analysis.startBlock && startGap !== undefined && startGap >= 90) {
+        const btbDuration = startGap >= 120 ? 60 : 30;
         try {
           const shiftStart = new Date(shift.startAt);
-          const btbEnd = new Date(shiftStart.getTime() + autoAddBtbDuration * 60 * 1000);
+          const btbEnd = new Date(shiftStart.getTime() + btbDuration * 60 * 1000);
           await createTimeblock({
             locationId,
             staffId: shift.staffMember.id,
@@ -2268,9 +2275,9 @@ app.post("/webhook/boulevard", async (c) => {
             title: "BTB",
           });
           addedBlocks.push(
-            `${staffName} start BTB (${analysis.minutesToFirstAppointment}min space)`
+            `${staffName} start BTB ${btbDuration}min (${startGap}min space)`
           );
-          console.log(`[Webhook] Added: ${staffName} start BTB (${autoAddBtbDuration}min)`);
+          console.log(`[Webhook] Added: ${staffName} start BTB (${btbDuration}min for ${startGap}min gap)`);
         } catch (e) {
           const errMsg = `Failed to add ${staffName} start BTB: ${e instanceof Error ? e.message : "Unknown"}`;
           errors.push(errMsg);
@@ -2278,10 +2285,12 @@ app.post("/webhook/boulevard", async (c) => {
         }
       }
 
-      if (analysis.endAutoAdd && !analysis.endBlock) {
+      // Check end of shift
+      if (!analysis.endBlock && endGap !== undefined && endGap >= 90) {
+        const btbDuration = endGap >= 120 ? 60 : 30;
         try {
           const shiftEnd = new Date(shift.endAt);
-          const btbStart = new Date(shiftEnd.getTime() - autoAddBtbDuration * 60 * 1000);
+          const btbStart = new Date(shiftEnd.getTime() - btbDuration * 60 * 1000);
           await createTimeblock({
             locationId,
             staffId: shift.staffMember.id,
@@ -2290,9 +2299,9 @@ app.post("/webhook/boulevard", async (c) => {
             title: "BTB",
           });
           addedBlocks.push(
-            `${staffName} end BTB (${analysis.minutesAfterLastAppointment}min space)`
+            `${staffName} end BTB ${btbDuration}min (${endGap}min space)`
           );
-          console.log(`[Webhook] Added: ${staffName} end BTB (${autoAddBtbDuration}min)`);
+          console.log(`[Webhook] Added: ${staffName} end BTB (${btbDuration}min for ${endGap}min gap)`);
         } catch (e) {
           const errMsg = `Failed to add ${staffName} end BTB: ${e instanceof Error ? e.message : "Unknown"}`;
           errors.push(errMsg);
