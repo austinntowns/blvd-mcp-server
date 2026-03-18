@@ -1,8 +1,0 @@
-[variables]
-NIXPACKS_NODE_VERSION = "22"
-
-[phases.build]
-cmds = ["echo 'Skipping mcp-use build for BTB server'"]
-
-[start]
-cmd = "npx tsx admin-server.ts"

@@ -1,0 +1,18 @@
+FROM node:22-slim
+
+WORKDIR /app
+
+# Copy package files
+COPY package*.json ./
+
+# Install dependencies
+RUN npm ci --omit=dev || npm ci
+
+# Copy source
+COPY . .
+
+# Expose port
+EXPOSE 8080
+
+# Start the server
+CMD ["npx", "tsx", "admin-server.ts"]

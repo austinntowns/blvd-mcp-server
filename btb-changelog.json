@@ -5,6 +5,32 @@
       "mode": "execute",
       "location": "urn:blvd:Location:61921eab-3a5a-4858-a969-1b85af789076",
       "details": [
+        "Becca end BTB (25min gap, 50% util)"
+      ],
+      "added": 0,
+      "skipped": 0,
+      "errors": 0,
+      "removed": 1,
+      "timestamp": "2026-03-18T08:19:08.645Z"
+    },
+    {
+      "action": "webhook",
+      "mode": "execute",
+      "location": "urn:blvd:Location:61921eab-3a5a-4858-a969-1b85af789076",
+      "details": [
+        "Becca end BTB (25min gap, 50% util)"
+      ],
+      "added": 0,
+      "skipped": 0,
+      "errors": 0,
+      "removed": 1,
+      "timestamp": "2026-03-18T06:19:18.510Z"
+    },
+    {
+      "action": "webhook",
+      "mode": "execute",
+      "location": "urn:blvd:Location:61921eab-3a5a-4858-a969-1b85af789076",
+      "details": [
         "Becca end BTB (0min gap, 53.1% util)"
       ],
       "added": 0,
