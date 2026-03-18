@@ -5,4 +5,4 @@ NIXPACKS_NODE_VERSION = "22"
 cmds = ["echo 'Skipping mcp-use build for BTB server'"]
 
 [start]
-cmd = "npm run btb:server"
+cmd = "npx tsx admin-server.ts"
