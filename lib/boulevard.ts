@@ -105,7 +105,12 @@ export interface Appointment {
   cancelled: boolean;
   state: string;
   createdAt?: string;
-  client?: { id: string; name?: string };
+  client?: {
+    id: string;
+    name?: string;
+    createdAt?: string;
+    appointmentCount?: number;
+  };
   appointmentServices?: {
     service?: { name: string };
     staff?: StaffMember;
@@ -217,6 +222,7 @@ const APPOINTMENTS_QUERY = gql`
           client {
             id
             name
+            createdAt
           }
           appointmentServices {
             service {
@@ -857,8 +863,26 @@ export function analyzeBTBBlocks(
     })
     .sort((a, b) => new Date(a.startAt).getTime() - new Date(b.startAt).getTime());
 
-  // Calculate utilization
-  const availableMinutes = (shiftEnd - shiftStart) / (1000 * 60);
+  // Calculate blocked time from ALL timeblocks (BTB, DNB, lunch, etc.) for this staff
+  const shiftStaffId = shift.staffMember.id.replace("urn:blvd:Staff:", "");
+  const staffTimeblocks = timeblocks.filter((tb) => {
+    const tbStaffId = tb.staff?.id?.replace("urn:blvd:Staff:", "") || "";
+    if (tbStaffId !== shiftStaffId) return false;
+    const tbStart = new Date(tb.startAt).getTime();
+    const tbEnd = new Date(tb.endAt).getTime();
+    return tbStart < shiftEnd && tbEnd > shiftStart;
+  });
+
+  let blockedMinutes = 0;
+  for (const tb of staffTimeblocks) {
+    const tbStart = Math.max(new Date(tb.startAt).getTime(), shiftStart);
+    const tbEnd = Math.min(new Date(tb.endAt).getTime(), shiftEnd);
+    blockedMinutes += (tbEnd - tbStart) / (1000 * 60);
+  }
+
+  // Calculate utilization: booked / (shift - blocked)
+  const shiftMinutes = (shiftEnd - shiftStart) / (1000 * 60);
+  const availableMinutes = Math.max(shiftMinutes - blockedMinutes, 0);
   let bookedMinutes = 0;
   for (const apt of shiftAppointments) {
     const aptStart = Math.max(new Date(apt.startAt).getTime(), shiftStart);
@@ -872,13 +896,10 @@ export function analyzeBTBBlocks(
   // Find BTB blocks for this shift and staff member
   const staffBTBBlocks = timeblocks.filter((tb) => {
     if (!isBTBBlock(tb)) return false;
-    // Compare staff IDs (handle URN vs plain UUID format)
     const tbStaffId = tb.staff?.id?.replace("urn:blvd:Staff:", "") || "";
-    const shiftStaffId = shift.staffMember.id.replace("urn:blvd:Staff:", "");
     if (tbStaffId !== shiftStaffId) return false;
     const tbStart = new Date(tb.startAt).getTime();
     const tbEnd = new Date(tb.endAt).getTime();
-    // Block must overlap with shift
     return tbStart < shiftEnd && tbEnd > shiftStart;
   });
 
