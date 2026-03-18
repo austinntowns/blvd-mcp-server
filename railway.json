@@ -5,7 +5,7 @@
     "buildCommand": "echo 'Skipping mcp-use build for BTB server'"
   },
   "deploy": {
-    "startCommand": "npm run btb:server",
+    "startCommand": "npx tsx test-server.ts",
     "restartPolicyType": "ON_FAILURE",
     "restartPolicyMaxRetries": 3
   }
