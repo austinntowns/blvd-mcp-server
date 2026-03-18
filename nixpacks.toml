@@ -5,4 +5,4 @@ NIXPACKS_NODE_VERSION = "22"
 cmds = ["echo 'Build complete'"]
 
 [start]
-cmd = "npx tsx admin-server.ts"
+cmd = "echo 'Starting server...' && node --version && which npx && npx tsx admin-server.ts 2>&1"
