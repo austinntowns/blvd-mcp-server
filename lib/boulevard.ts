@@ -104,6 +104,7 @@ export interface Appointment {
   duration: number;
   cancelled: boolean;
   state: string;
+  createdAt?: string;
   client?: { id: string; name?: string };
   appointmentServices?: {
     service?: { name: string };
@@ -212,6 +213,7 @@ const APPOINTMENTS_QUERY = gql`
           duration
           cancelled
           state
+          createdAt
           client {
             id
             name
@@ -580,6 +582,95 @@ export async function getAppointments(
   return allAppointments;
 }
 
+/**
+ * Get appointments filtered by creation date (when booked, not when scheduled)
+ * Uses query string filtering on createdAt field
+ */
+export async function getAppointmentsByCreatedDate(
+  locationId: string,
+  createdAfter: string,
+  createdBefore?: string,
+  limit: number = 1000
+): Promise<Appointment[]> {
+  const client = getClient();
+  const allAppointments: Appointment[] = [];
+  let hasNextPage = true;
+  let cursor: string | null = null;
+  let fetched = 0;
+  let pageCount = 0;
+
+  // Parse date range for filtering
+  const afterTime = new Date(createdAfter).getTime();
+  const beforeTime = createdBefore ? new Date(createdBefore + "T23:59:59").getTime() : null;
+
+  while (hasNextPage && fetched < limit) {
+    if (pageCount > 0) {
+      await new Promise(r => setTimeout(r, 350));
+    }
+
+    let data: AppointmentsResponse | undefined;
+    let retries = 0;
+    const maxRetries = 5;
+
+    while (retries < maxRetries) {
+      try {
+        data = await client.request<AppointmentsResponse>(
+          APPOINTMENTS_QUERY,
+          { locationId, first: 100, after: cursor }
+        );
+        break;
+      } catch (e: any) {
+        const errMsg = e.message || "";
+        const status = e.response?.status;
+        const isRetryable =
+          errMsg.includes("API limit") || status === 429 ||
+          status === 502 || status === 503 || status === 504 ||
+          errMsg.includes("502") || errMsg.includes("503") || errMsg.includes("504") ||
+          errMsg.includes("Bad Gateway") || errMsg.includes("ECONNRESET");
+
+        if (isRetryable && retries < maxRetries - 1) {
+          retries++;
+          const waitMatch = errMsg.match(/wait (\d+)ms/);
+          const waitTime = waitMatch
+            ? parseInt(waitMatch[1]) + 50
+            : Math.min(1000 * Math.pow(2, retries), 10000);
+          await new Promise(r => setTimeout(r, waitTime));
+          continue;
+        }
+        throw e;
+      }
+    }
+
+    if (!data) {
+      throw new Error("Failed to fetch appointments after retries");
+    }
+
+    for (const edge of data.appointments.edges) {
+      const apt = edge.node;
+
+      // Skip cancelled appointments
+      if (apt.cancelled) continue;
+
+      // Filter by createdAt range
+      if (!apt.createdAt) continue;
+      const createdTime = new Date(apt.createdAt).getTime();
+      if (createdTime < afterTime) continue;
+      if (beforeTime && createdTime > beforeTime) continue;
+
+      allAppointments.push(apt);
+      fetched++;
+
+      if (fetched >= limit) break;
+    }
+
+    hasNextPage = data.appointments.pageInfo.hasNextPage;
+    cursor = data.appointments.pageInfo.endCursor;
+    pageCount++;
+  }
+
+  return allAppointments;
+}
+
 interface TimeblocksResponse {
   timeblocks: {
     edges: { node: Timeblock }[];
@@ -688,6 +779,9 @@ export interface BTBCleanupConfig {
   lookAheadDays: number; // Default 14
   emptyWindowMinutes: number; // Default 120 (2 hours) - add BTB if no appointments in this window
   btbDurationMinutes: number; // Default 60 (1 hour) - duration of BTB blocks to create
+  // Auto-add rule: add BTB when there's enough space (regardless of utilization)
+  autoAddGapMinutes: number; // Default 90 - add BTB if space >= this
+  autoAddBtbDuration: number; // Default 30 - duration of auto-added BTB blocks
 }
 
 export const DEFAULT_BTB_CONFIG: BTBCleanupConfig = {
@@ -696,6 +790,8 @@ export const DEFAULT_BTB_CONFIG: BTBCleanupConfig = {
   lookAheadDays: 14,
   emptyWindowMinutes: 120,
   btbDurationMinutes: 60,
+  autoAddGapMinutes: 90,
+  autoAddBtbDuration: 30,
 };
 
 // Result of analyzing a shift for BTB management
@@ -713,6 +809,9 @@ export interface BTBAnalysisResult {
   // Addition flags (low utilization, no appointments near shift edges)
   startBlockShouldAdd: boolean;
   endBlockShouldAdd: boolean;
+  // Auto-add flags (when space >= autoAddGapMinutes, regardless of utilization)
+  startAutoAdd: boolean;
+  endAutoAdd: boolean;
   // Appointment info
   firstAppointmentStart?: string;
   lastAppointmentEnd?: string;
@@ -816,6 +915,8 @@ export function analyzeBTBBlocks(
     endBlockShouldRemove: false,
     startBlockShouldAdd: false,
     endBlockShouldAdd: false,
+    startAutoAdd: false,
+    endAutoAdd: false,
     minutesToFirstAppointment,
     minutesAfterLastAppointment,
     firstAppointmentStart: shiftAppointments[0]?.startAt,
@@ -882,6 +983,19 @@ export function analyzeBTBBlocks(
       if (lastAptFarEnough) {
         result.endBlockShouldAdd = true;
       }
+    }
+  }
+
+  // AUTO-ADD RULE: Add short BTB when there's enough space (regardless of utilization)
+  // This triggers via webhook when appointments are cancelled/moved
+  if (!startBlock && minutesToFirstAppointment !== undefined) {
+    if (minutesToFirstAppointment >= config.autoAddGapMinutes) {
+      result.startAutoAdd = true;
+    }
+  }
+  if (!endBlock && minutesAfterLastAppointment !== undefined) {
+    if (minutesAfterLastAppointment >= config.autoAddGapMinutes) {
+      result.endAutoAdd = true;
     }
   }
 

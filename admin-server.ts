@@ -17,6 +17,7 @@ import {
   getTimeblocks,
   getTimeblocksInRange,
   deleteTimeblock,
+  createTimeblock,
   analyzeBTBBlocks,
   executeBTBActions,
   DEFAULT_BTB_CONFIG,
@@ -2213,14 +2214,19 @@ app.post("/webhook/boulevard", async (c) => {
     const timeblocks = await withRetry(() => getTimeblocksInRange(locationId, startDate, endDate));
 
     const deletedBlocks: string[] = [];
+    const addedBlocks: string[] = [];
     const errors: string[] = [];
 
-    // Analyze and remove BTB blocks for each shift (REMOVAL ONLY - no adding)
+    // Get auto-add config
+    const autoAddGapMinutes = parseInt(process.env.BTB_AUTO_ADD_GAP_MINUTES || "90");
+    const autoAddBtbDuration = parseInt(process.env.BTB_AUTO_ADD_DURATION || "30");
+
+    // Analyze and manage BTB blocks for each shift
     for (const shift of shifts) {
       const analysis = analyzeBTBBlocks(shift, appointments, timeblocks, config);
       const staffName = shift.staffMember.displayName || shift.staffMember.name;
 
-      // Only process removals, not additions
+      // REMOVAL: Remove BTB blocks when utilization is high and appointments are close
       if (analysis.startBlockShouldRemove && analysis.startBlock) {
         try {
           await deleteTimeblock(analysis.startBlock.id);
@@ -2248,16 +2254,61 @@ app.post("/webhook/boulevard", async (c) => {
           console.error(`[Webhook] Error: ${errMsg}`);
         }
       }
+
+      // AUTO-ADD: Add 30min BTB when there's 90+ minutes of space at start/end
+      if (analysis.startAutoAdd && !analysis.startBlock) {
+        try {
+          const shiftStart = new Date(shift.startAt);
+          const btbEnd = new Date(shiftStart.getTime() + autoAddBtbDuration * 60 * 1000);
+          await createTimeblock({
+            locationId,
+            staffId: shift.staffMember.id,
+            startAt: shiftStart.toISOString(),
+            endAt: btbEnd.toISOString(),
+            title: "BTB",
+          });
+          addedBlocks.push(
+            `${staffName} start BTB (${analysis.minutesToFirstAppointment}min space)`
+          );
+          console.log(`[Webhook] Added: ${staffName} start BTB (${autoAddBtbDuration}min)`);
+        } catch (e) {
+          const errMsg = `Failed to add ${staffName} start BTB: ${e instanceof Error ? e.message : "Unknown"}`;
+          errors.push(errMsg);
+          console.error(`[Webhook] Error: ${errMsg}`);
+        }
+      }
+
+      if (analysis.endAutoAdd && !analysis.endBlock) {
+        try {
+          const shiftEnd = new Date(shift.endAt);
+          const btbStart = new Date(shiftEnd.getTime() - autoAddBtbDuration * 60 * 1000);
+          await createTimeblock({
+            locationId,
+            staffId: shift.staffMember.id,
+            startAt: btbStart.toISOString(),
+            endAt: shiftEnd.toISOString(),
+            title: "BTB",
+          });
+          addedBlocks.push(
+            `${staffName} end BTB (${analysis.minutesAfterLastAppointment}min space)`
+          );
+          console.log(`[Webhook] Added: ${staffName} end BTB (${autoAddBtbDuration}min)`);
+        } catch (e) {
+          const errMsg = `Failed to add ${staffName} end BTB: ${e instanceof Error ? e.message : "Unknown"}`;
+          errors.push(errMsg);
+          console.error(`[Webhook] Error: ${errMsg}`);
+        }
+      }
     }
 
     // Log to changelog
-    if (deletedBlocks.length > 0 || errors.length > 0) {
+    if (deletedBlocks.length > 0 || addedBlocks.length > 0 || errors.length > 0) {
       logChange({
         action: "webhook",
         mode: "execute",
         location: locationId,
-        details: [...deletedBlocks, ...errors],
-        added: 0,
+        details: [...deletedBlocks, ...addedBlocks, ...errors],
+        added: addedBlocks.length,
         skipped: 0,
         errors: errors.length,
         removed: deletedBlocks.length,
@@ -2265,7 +2316,7 @@ app.post("/webhook/boulevard", async (c) => {
     }
 
     const duration = Date.now() - startTime;
-    console.log(`[Webhook] Completed in ${duration}ms: ${deletedBlocks.length} removed, ${errors.length} errors`);
+    console.log(`[Webhook] Completed in ${duration}ms: ${deletedBlocks.length} removed, ${addedBlocks.length} added, ${errors.length} errors`);
 
     return c.json({
       status: "processed",
@@ -2274,7 +2325,9 @@ app.post("/webhook/boulevard", async (c) => {
       staffId: staffId || "all",
       shiftsChecked: shifts.length,
       blocksRemoved: deletedBlocks.length,
+      blocksAdded: addedBlocks.length,
       removed: deletedBlocks,
+      added: addedBlocks,
       errors: errors.length > 0 ? errors : undefined,
       durationMs: duration,
     });
