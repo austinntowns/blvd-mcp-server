@@ -14,5 +14,5 @@ COPY . .
 # Expose port
 EXPOSE 8080
 
-# Start the server
-CMD ["npx", "tsx", "admin-server.ts"]
+# Start the server with shell to see output
+CMD ["/bin/sh", "-c", "echo '[DOCKER] Container starting...' && echo '[DOCKER] Node version:' && node --version && echo '[DOCKER] Running server...' && npx tsx admin-server.ts"]
