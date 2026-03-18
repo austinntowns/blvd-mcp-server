@@ -2303,4 +2303,5 @@ console.log(`Webhook endpoint: http://localhost:${PORT}/webhook/boulevard`);
 serve({
   fetch: app.fetch,
   port: PORT,
+  hostname: "0.0.0.0",
 });
