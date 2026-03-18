@@ -2266,12 +2266,11 @@ app.post("/webhook/boulevard", async (c) => {
         const btbDuration = startGap >= 120 ? 60 : 30;
         try {
           const shiftStart = new Date(shift.startAt);
-          const btbEnd = new Date(shiftStart.getTime() + btbDuration * 60 * 1000);
           await createTimeblock({
             locationId,
             staffId: shift.staffMember.id,
-            startAt: shiftStart.toISOString(),
-            endAt: btbEnd.toISOString(),
+            startTime: shiftStart.toISOString(),
+            duration: btbDuration,
             title: "BTB",
           });
           addedBlocks.push(
@@ -2294,8 +2293,8 @@ app.post("/webhook/boulevard", async (c) => {
           await createTimeblock({
             locationId,
             staffId: shift.staffMember.id,
-            startAt: btbStart.toISOString(),
-            endAt: shiftEnd.toISOString(),
+            startTime: btbStart.toISOString(),
+            duration: btbDuration,
             title: "BTB",
           });
           addedBlocks.push(
