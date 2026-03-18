@@ -1,0 +1,8 @@
+[variables]
+NIXPACKS_NODE_VERSION = "22"
+
+[phases.build]
+cmds = ["echo 'Build complete'"]
+
+[start]
+cmd = "npx tsx admin-server.ts"
