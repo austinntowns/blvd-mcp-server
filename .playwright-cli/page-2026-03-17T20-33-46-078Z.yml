@@ -1,0 +1,106 @@
+- generic [ref=e2]:
+  - generic [ref=e3]:
+    - banner [ref=e4]:
+      - generic [ref=e5]:
+        - generic [ref=e7]:
+          - link "Boulevard Developer" [ref=e8] [cursor=pointer]:
+            - /url: /
+            - img "Boulevard" [ref=e9]
+            - text: Developer
+          - generic "Turn night mode on or off" [ref=e10] [cursor=pointer]:
+            - img [ref=e12]
+        - combobox "search input" [ref=e18]
+        - generic [ref=e19]:
+          - generic [ref=e21] [cursor=pointer]:
+            - text: Admin API
+            - img [ref=e23]
+          - navigation [ref=e25]:
+            - button "Go to Data Share" [ref=e26] [cursor=pointer]: Data Share
+            - button "Go to Changelog" [ref=e27] [cursor=pointer]: Changelog
+          - link "Support" [ref=e28] [cursor=pointer]:
+            - /url: https://blvd.atlassian.net/servicedesk/customer/portal/17/group/35/create/120
+          - generic [ref=e30]:
+            - button "Sign In" [ref=e31] [cursor=pointer]:
+              - generic [ref=e32]: Sign In
+            - text: or
+            - button "Apply" [ref=e33] [cursor=pointer]:
+              - generic [ref=e34]: Apply
+    - navigation [ref=e37]:
+      - link "Overview" [ref=e38] [cursor=pointer]:
+        - /url: /2020-01/admin-api/overview
+        - button "Overview" [ref=e39]:
+          - generic [ref=e40]: Overview
+      - link "Authentication" [ref=e41] [cursor=pointer]:
+        - /url: /2020-01/admin-api/authentication
+        - button "Authentication" [ref=e42]:
+          - generic [ref=e43]: Authentication
+      - link "Rate limiting" [ref=e44] [cursor=pointer]:
+        - /url: /2020-01/admin-api/rate-limiting
+        - button "Rate limiting" [ref=e45]:
+          - generic [ref=e46]: Rate limiting
+      - button "Guides" [ref=e47] [cursor=pointer]:
+        - generic [ref=e48]: Guides
+      - navigation [ref=e52]:
+        - button "Go to App Installation" [ref=e53] [cursor=pointer]:
+          - generic [ref=e54]: App Installation
+        - button "Go to Code snippets" [ref=e55] [cursor=pointer]:
+          - generic [ref=e56]: Code snippets
+        - button "Go to Create staff member" [ref=e57] [cursor=pointer]:
+          - generic [ref=e58]: Create staff member
+        - button "Go to List appointments" [ref=e59] [cursor=pointer]:
+          - generic [ref=e60]: List appointments
+        - button "Go to Report export" [ref=e61] [cursor=pointer]:
+          - generic [ref=e62]: Report export
+        - button "Go to Staff Shifts" [ref=e63] [cursor=pointer]:
+          - generic [ref=e64]: Staff Shifts
+        - button "Go to Webhooks" [ref=e65] [cursor=pointer]:
+          - generic [ref=e66]: Webhooks
+        - button "Go to Zapier integration" [ref=e67] [cursor=pointer]:
+          - generic [ref=e68]: Zapier integration
+      - button "API Reference" [ref=e69] [cursor=pointer]:
+        - generic [ref=e70]: API Reference
+    - main [ref=e71]:
+      - generic [ref=e73]:
+        - heading "Helpful code Snippets" [level=1] [ref=e74]
+        - heading "Authentication Token Creation" [level=2] [ref=e75]
+        - heading "NodeJS" [level=3] [ref=e76]
+        - code [ref=e78]:
+          - text: 1. const crypto = require('crypto') 2. 3. function generate_auth_header(
+          - generic [ref=e79]: business_id, api_secret, api_key
+          - text: ") { 4. const prefix = 'blvd-admin-v1' 5. const timestamp = Math.floor(Date.now() / 1000) 6. 7. const payload ="
+          - generic [ref=e80]:
+            - text: "`"
+            - generic [ref=e81]: "${prefix}"
+            - generic [ref=e82]: "${business_id}"
+            - generic [ref=e83]: "${timestamp}"
+            - text: "`"
+          - text: 8. const raw_key = Buffer.from(api_secret, 'base64') 9. const signature = crypto 10. .createHmac('sha256', raw_key) 11. .update(payload, 'utf8') 12. .digest('base64') 13. 14. const token =
+          - generic [ref=e84]:
+            - text: "`"
+            - generic [ref=e85]: "${signature}"
+            - generic [ref=e86]: "${payload}"
+            - text: "`"
+          - text: 15. const http_basic_payload =
+          - generic [ref=e87]:
+            - text: "`"
+            - generic [ref=e88]: "${api_key}"
+            - text: ":"
+            - generic [ref=e89]: "${token}"
+            - text: "`"
+          - text: "16. const http_basic_credentials = Buffer.from(http_basic_payload, 'utf8').toString('base64') 17. 18. return http_basic_credentials 19. }"
+        - heading "PHP" [level=3] [ref=e90]
+        - code [ref=e92]:
+          - text: "1."
+          - generic [ref=e93]: "<?php 2. function generate_auth_header($business_id, $api_secret, $api_key) 3. { 4. $timestamp = strtotime(\"now\"); 5. $prefix = 'blvd-admin-v1'; 6. $payload = $prefix . $business_id . $timestamp; 7. 8. $raw_key = base64_decode(strtr($api_secret, '._-', '+/=')); 9. $raw_mac = hash_hmac('sha256', $payload, $raw_key, true); 10. $signature = base64_encode($raw_mac); 11. 12. $token = $signature . $payload; 13. 14. $basic_payload = $api_key . ':' . $token; 15. $basic_credentials = base64_encode($basic_payload); 16. 17. $result = 'Basic ' . $basic_credentials; 18. 19. return $result; 20. }"
+    - generic [ref=e96] [cursor=pointer]:
+      - text: v2020-01
+      - img [ref=e98]
+  - contentinfo [ref=e100]:
+    - generic [ref=e101]:
+      - paragraph [ref=e102]:
+        - link "Powered by Boulevard" [ref=e103] [cursor=pointer]:
+          - /url: https://joinblvd.com
+          - generic [ref=e104]: Powered by Boulevard
+          - img [ref=e105]
+      - link "Privacy Policy" [ref=e109] [cursor=pointer]:
+        - /url: https://www.joinblvd.com/legal/customer-privacy-policy

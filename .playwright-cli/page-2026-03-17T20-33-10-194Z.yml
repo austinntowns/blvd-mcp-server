@@ -1,0 +1,115 @@
+- generic [ref=e2]:
+  - generic [ref=e3]:
+    - banner [ref=e4]:
+      - generic [ref=e5]:
+        - generic [ref=e7]:
+          - link "Boulevard Developer" [ref=e8] [cursor=pointer]:
+            - /url: /
+            - img "Boulevard" [ref=e9]
+            - text: Developer
+          - generic "Turn night mode on or off" [ref=e10] [cursor=pointer]:
+            - img [ref=e12]
+        - combobox "search input" [ref=e18]
+        - generic [ref=e19]:
+          - generic [ref=e21] [cursor=pointer]:
+            - text: Admin API
+            - img [ref=e23]
+          - navigation [ref=e25]:
+            - button "Go to Data Share" [ref=e26] [cursor=pointer]: Data Share
+            - button "Go to Changelog" [ref=e27] [cursor=pointer]: Changelog
+          - link "Support" [ref=e28] [cursor=pointer]:
+            - /url: https://blvd.atlassian.net/servicedesk/customer/portal/17/group/35/create/120
+          - generic [ref=e30]:
+            - button "Sign In" [ref=e31] [cursor=pointer]:
+              - generic [ref=e32]: Sign In
+            - text: or
+            - button "Apply" [ref=e33] [cursor=pointer]:
+              - generic [ref=e34]: Apply
+    - navigation [ref=e37]:
+      - link "Overview" [ref=e38] [cursor=pointer]:
+        - /url: /2020-01/admin-api/overview
+        - button "Overview" [ref=e39]:
+          - generic [ref=e40]: Overview
+      - link "Authentication" [ref=e41] [cursor=pointer]:
+        - /url: /2020-01/admin-api/authentication
+        - button "Authentication" [ref=e42]:
+          - generic [ref=e43]: Authentication
+      - link "Rate limiting" [ref=e44] [cursor=pointer]:
+        - /url: /2020-01/admin-api/rate-limiting
+        - button "Rate limiting" [ref=e45]:
+          - generic [ref=e46]: Rate limiting
+      - button "Guides" [ref=e47] [cursor=pointer]:
+        - generic [ref=e48]: Guides
+      - button "API Reference" [ref=e49] [cursor=pointer]:
+        - generic [ref=e50]: API Reference
+    - main [ref=e51]:
+      - generic [ref=e53]:
+        - heading "Admin API Authentication" [level=1] [ref=e54]
+        - paragraph [ref=e55]:
+          - text: The Admin API uses a token scoped to your Business and
+          - link "Basic HTTP authentication" [ref=e56] [cursor=pointer]:
+            - /url: https://developer.mozilla.org/en-US/docs/Web/HTTP/Authentication#Basic_authentication_scheme
+          - text: .
+        - paragraph [ref=e57]: "The Client must send an \"Authorization\" header with every request:"
+        - code [ref=e59]: "1. Authorization: Basic <your-token>"
+        - paragraph [ref=e60]: "Example:"
+        - code [ref=e62]: "1. Authorization: Basic MmE1ODI1MzYtMzJlOC00ZjVmLTgzNDQtYmM0YTc2MGU2YjczOmdWMmNvbXkrUUhyQSswZ0hZT2IrbEFYd3NDaFE0Tm9MTmphRm9kZUNjT2c9Ymx2ZC1hZG1pbi12MWJlMDY1ZDQ0LTc1YzUtNGFlNi04OWNhLTIwMTJjNzUzMWE0ZDE2MTg5MDI2NTA="
+        - heading "Generating a signed API token for your Business" [level=2] [ref=e63]
+        - paragraph [ref=e64]: "To generate an API token you'll need:"
+        - list [ref=e65]:
+          - listitem [ref=e66]:
+            - text: Your API application key (
+            - code [ref=e67]: API_KEY
+            - text: )
+          - listitem [ref=e68]:
+            - text: Your API application's secret key (
+            - code [ref=e69]: SECRET_KEY
+            - text: )
+          - listitem [ref=e70]:
+            - text: Your business ID (
+            - code [ref=e71]: BUSINESS_ID
+            - text: )
+        - paragraph [ref=e72]: The token you'll generate will have access to all of your business' data.
+        - heading "1. Generate a token payload" [level=3] [ref=e73]
+        - paragraph [ref=e74]: "First, create a token payload by concatenating a prefix, BUSINESS_ID, and current timestamp:"
+        - code [ref=e76]: 1. prefix = "blvd-admin-v1" 2. timestamp = current Unix timestamp in UTC, seconds since epoch, as a string 3. 4. token_payload = concat(prefix, BUSINESS_ID, timestamp)
+        - paragraph [ref=e77]: "Example token_payload:"
+        - code [ref=e79]: 1. "blvd-admin-v1aed44b3b-cdfc-4a5b-9a4f-3550d35765391615459959"
+        - heading "2. Sign the payload" [level=3] [ref=e80]
+        - paragraph [ref=e81]: "Then HMAC sign the payload, and base64-encode it using your secret key:"
+        - code [ref=e83]: 1. raw_key = base64_decode(SECRET_KEY) 2. raw_mac = hmac_sha256(token_payload, raw_key) 3. signature = base64_encode(raw_mac) 4. 5. token = concat(signature, token_payload)
+        - paragraph [ref=e84]: "Example token:"
+        - code [ref=e86]: 1. "8EVnyuYvsN1XkLyXJaivIh6ZYGNHSYg7vq/YpnR5DM0=blvd-admin-v1aed44b3b-cdfc-4a5b-9a4f-3550d35765391615459959"
+        - blockquote [ref=e87]:
+          - paragraph [ref=e88]:
+            - strong [ref=e89]: "Note:"
+            - text: The resulting base-64 signature uses the raw MAC byte sequence as input, not its string representation in base-16 or similar. It’s assumed that the payload is signed in its UTF-8 representation.
+        - heading "3. Create HTTP Credentials" [level=3] [ref=e90]
+        - paragraph [ref=e91]: "Now that you have your token, this can be used as the credentials in Basic Auth:"
+        - code [ref=e93]: "1. http_basic_payload = concat(API_KEY, \":\", token) 2. http_basic_credentials = base64_encode(http_basic_payload) 3. 4. http_basic_header = concat(\"Authorization: Basic \", http_basic_credentials)"
+        - paragraph [ref=e94]: "Example http_basic_header:"
+        - code [ref=e96]: "1. \"Authorization: Basic MmE1ODI1MzYtMzJlOC00ZjVmLTgzNDQtYmM0YTc2MGU2YjczOmdWMmNvbXkrUUhyQSswZ0hZT2IrbEFYd3NDaFE0Tm9MTmphRm9kZUNjT2c9Ymx2ZC1hZG1pbi12MWJlMDY1ZDQ0LTc1YzUtNGFlNi04OWNhLTIwMTJjNzUzMWE0ZDE2MTg5MDI2NTA=\""
+        - paragraph [ref=e97]:
+          - text: For examples in a few programming languages, take a look at the
+          - link "Code snippets documentation" [ref=e98] [cursor=pointer]:
+            - /url: /2020-01/admin-api/guides/code-snippets
+          - text: ":"
+        - list [ref=e99]:
+          - listitem [ref=e100]:
+            - link "NodeJS" [ref=e101] [cursor=pointer]:
+              - /url: /2020-01/admin-api/guides/code-snippets#nodejs
+          - listitem [ref=e102]:
+            - link "PHP" [ref=e103] [cursor=pointer]:
+              - /url: /2020-01/admin-api/guides/code-snippets#php
+    - generic [ref=e106] [cursor=pointer]:
+      - text: v2020-01
+      - img [ref=e108]
+  - contentinfo [ref=e110]:
+    - generic [ref=e111]:
+      - paragraph [ref=e112]:
+        - link "Powered by Boulevard" [ref=e113] [cursor=pointer]:
+          - /url: https://joinblvd.com
+          - generic [ref=e114]: Powered by Boulevard
+          - img [ref=e115]
+      - link "Privacy Policy" [ref=e119] [cursor=pointer]:
+        - /url: https://www.joinblvd.com/legal/customer-privacy-policy

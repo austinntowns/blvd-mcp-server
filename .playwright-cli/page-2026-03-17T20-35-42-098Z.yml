@@ -1,0 +1,105 @@
+- generic [ref=e2]:
+  - generic [ref=e3]:
+    - banner [ref=e4]:
+      - generic [ref=e5]:
+        - generic [ref=e7]:
+          - link "Boulevard Developer" [ref=e8] [cursor=pointer]:
+            - /url: /
+            - img "Boulevard" [ref=e9]
+            - text: Developer
+          - generic "Turn night mode on or off" [ref=e10] [cursor=pointer]:
+            - img [ref=e12]
+        - combobox "search input" [ref=e18]
+        - generic [ref=e19]:
+          - generic [ref=e21] [cursor=pointer]:
+            - text: Admin API
+            - img [ref=e23]
+          - navigation [ref=e25]:
+            - button "Go to Data Share" [ref=e26] [cursor=pointer]: Data Share
+            - button "Go to Changelog" [ref=e27] [cursor=pointer]: Changelog
+          - link "Support" [ref=e28] [cursor=pointer]:
+            - /url: https://blvd.atlassian.net/servicedesk/customer/portal/17/group/35/create/120
+          - generic [ref=e30]:
+            - button "Sign In" [ref=e31] [cursor=pointer]:
+              - generic [ref=e32]: Sign In
+            - text: or
+            - button "Apply" [ref=e33] [cursor=pointer]:
+              - generic [ref=e34]: Apply
+    - navigation [ref=e37]:
+      - link "Overview" [ref=e38] [cursor=pointer]:
+        - /url: /2020-01/admin-api/overview
+        - button "Overview" [ref=e39]:
+          - generic [ref=e40]: Overview
+      - link "Authentication" [ref=e41] [cursor=pointer]:
+        - /url: /2020-01/admin-api/authentication
+        - button "Authentication" [ref=e42]:
+          - generic [ref=e43]: Authentication
+      - link "Rate limiting" [ref=e44] [cursor=pointer]:
+        - /url: /2020-01/admin-api/rate-limiting
+        - button "Rate limiting" [ref=e45]:
+          - generic [ref=e46]: Rate limiting
+      - button "Guides" [ref=e47] [cursor=pointer]:
+        - generic [ref=e48]: Guides
+      - button "API Reference" [ref=e49] [cursor=pointer]:
+        - generic [ref=e50]: API Reference
+    - main [ref=e51]:
+      - generic [ref=e53]:
+        - heading "Admin API" [level=1] [ref=e54]
+        - paragraph [ref=e55]: Manage business operations. In contrast with the Client API, which focuses on experiences seen from the customer perspective, the Admin API enables developers to build apps around merchant-facing actions, such as employee and inventory management.
+        - heading "Using the Admin API, you can:" [level=3] [ref=e56]
+        - list [ref=e57]:
+          - listitem [ref=e58]:
+            - link "List appointments" [ref=e59] [cursor=pointer]:
+              - /url: ../2020-01/admin-api/guides/list-appointments/
+            - list [ref=e60]:
+              - listitem [ref=e61]: Learn how to list and filter appointments.
+          - listitem [ref=e62]:
+            - link "Recurring Report Exports" [ref=e63] [cursor=pointer]:
+              - /url: ../2020-01/admin-api/guides/report-export/
+            - list [ref=e64]:
+              - listitem [ref=e65]: Learn how to export custom reports on a recurring basis.
+          - listitem [ref=e66]:
+            - link "Create a staff member" [ref=e67] [cursor=pointer]:
+              - /url: ../2020-01/admin-api/guides/create-staff-member/
+            - list [ref=e68]:
+              - listitem [ref=e69]: Learn how to add a staff account to your business.
+          - listitem [ref=e70]:
+            - link "Create a staff shift" [ref=e71] [cursor=pointer]:
+              - /url: ../2020-01/admin-api/guides/create-staff-shift/
+            - list [ref=e72]:
+              - listitem [ref=e73]: Learn how to set working hours for your staff
+        - heading "Endpoint" [level=3] [ref=e74]
+        - paragraph [ref=e75]: Sandbox
+        - code [ref=e77]: 1. https://sandbox.joinblvd.com/api/2020-01/admin
+        - paragraph [ref=e78]: Production
+        - code [ref=e80]: 1. https://dashboard.boulevard.io/api/2020-01/admin
+        - heading "Authentication" [level=3] [ref=e81]
+        - paragraph [ref=e82]:
+          - text: See the
+          - link "Authentication" [ref=e83] [cursor=pointer]:
+            - /url: /2020-01/admin-api/authentication
+          - text: page for instructions on how to authenticate with the API.
+        - heading "Rate Limiting" [level=3] [ref=e84]
+        - paragraph [ref=e85]:
+          - text: See the
+          - link "Rate limiting" [ref=e86] [cursor=pointer]:
+            - /url: /2020-01/admin-api/rate-limiting
+          - text: page for more details.
+        - heading "Platform Webhooks" [level=3] [ref=e87]
+        - paragraph [ref=e88]: You can use webhook subscriptions to receive notifications when particular events occur in your business. Rather than having to make API calls periodically, webhooks allow you to receive instant notifications when an event occurs that you'd like to take action on by executing custom code. For example, say you want to create an appointment in an external application when one is booked in Boulevard. A subscription to the appointment.created webhook would make a POST request to your specified endpoint with the booked appointment's data for you to use to use to create the appointment in the external system.
+        - paragraph [ref=e89]:
+          - text: By using webhook subscriptions you can make fewer API calls overall, which makes sure that your apps are more efficient and update quickly. For more information about how to subscribe to webhooks and a list of all supported event types, check out our
+          - link "Using Webhooks Guide" [ref=e90] [cursor=pointer]:
+            - /url: ../2020-01/admin-api/guides/webhooks/
+    - generic [ref=e93] [cursor=pointer]:
+      - text: v2020-01
+      - img [ref=e95]
+  - contentinfo [ref=e97]:
+    - generic [ref=e98]:
+      - paragraph [ref=e99]:
+        - link "Powered by Boulevard" [ref=e100] [cursor=pointer]:
+          - /url: https://joinblvd.com
+          - generic [ref=e101]: Powered by Boulevard
+          - img [ref=e102]
+      - link "Privacy Policy" [ref=e106] [cursor=pointer]:
+        - /url: https://www.joinblvd.com/legal/customer-privacy-policy

@@ -1,0 +1,385 @@
+{
+  "entries": [
+    {
+      "action": "webhook",
+      "mode": "execute",
+      "location": "urn:blvd:Location:61921eab-3a5a-4858-a969-1b85af789076",
+      "details": [
+        "Becca end BTB (0min gap, 53.1% util)"
+      ],
+      "added": 0,
+      "skipped": 0,
+      "errors": 0,
+      "removed": 1,
+      "timestamp": "2026-03-18T05:29:57.072Z"
+    },
+    {
+      "action": "webhook",
+      "mode": "execute",
+      "location": "urn:blvd:Location:61921eab-3a5a-4858-a969-1b85af789076",
+      "details": [
+        "Becca end BTB (25min gap, 50% util)"
+      ],
+      "added": 0,
+      "skipped": 0,
+      "errors": 0,
+      "removed": 1,
+      "timestamp": "2026-03-18T05:19:00.736Z"
+    },
+    {
+      "action": "bootstrap",
+      "mode": "execute",
+      "location": "UT Bountiful | Colonial Square 042",
+      "details": [
+        "2026-03-22: Izzy: added start BTB (60min)",
+        "2026-03-22: Izzy: added end BTB (60min)",
+        "2026-03-26: Amy M: added start BTB (60min)",
+        "2026-03-28: Abigail: added start BTB (60min)",
+        "2026-03-28: Abigail: added end BTB (60min)",
+        "2026-03-29: Izzy: added start BTB (60min)",
+        "2026-03-29: Izzy: added end BTB (60min)"
+      ],
+      "added": 7,
+      "skipped": 0,
+      "errors": 0,
+      "timestamp": "2026-03-18T04:46:57.983Z"
+    },
+    {
+      "action": "bootstrap",
+      "mode": "execute",
+      "location": "UT Ogden | Riverdale 082",
+      "details": [
+        "2026-03-20: Izzy: added start BTB (60min)",
+        "2026-03-20: Izzy: added end BTB (60min)",
+        "2026-03-21: Jennica: added start BTB (60min)",
+        "2026-03-21: Izzy: added end BTB (60min)",
+        "2026-03-26: Izzy: added start BTB (60min)",
+        "2026-03-26: Izzy: added end BTB (60min)",
+        "2026-03-27: Izzy: added start BTB (60min)",
+        "2026-03-27: Izzy: added end BTB (60min)",
+        "2026-03-28: Izzy: added end BTB (60min)"
+      ],
+      "added": 9,
+      "skipped": 2,
+      "errors": 0,
+      "timestamp": "2026-03-18T04:28:59.971Z"
+    },
+    {
+      "action": "bootstrap",
+      "mode": "execute",
+      "location": "UT Farmington | Farmington Station 227",
+      "details": [
+        "2026-03-20: Becca: added end BTB (60min)",
+        "2026-03-21: Becca: added end BTB (60min)",
+        "2026-03-22: Becca: added start BTB (60min)",
+        "2026-03-25: Becca: added start BTB (60min)",
+        "2026-03-27: Becca: added start BTB (60min)",
+        "2026-03-27: Becca: added end BTB (60min)",
+        "2026-03-28: Onna: added start BTB (60min)",
+        "2026-03-28: Onna: added end BTB (60min)"
+      ],
+      "added": 8,
+      "skipped": 3,
+      "errors": 0,
+      "timestamp": "2026-03-18T03:58:03.941Z"
+    },
+    {
+      "action": "bootstrap",
+      "mode": "execute",
+      "location": "UT Farmington | Farmington Station 227",
+      "details": [
+        "2026-03-19: Rate limited (needs 100ms) after 10 retries",
+        "2026-03-20: Rate limited (needs 100ms) after 10 retries",
+        "2026-03-21: Rate limited (needs 120ms) after 10 retries",
+        "2026-03-22: Rate limited (needs 120ms) after 10 retries",
+        "2026-03-23: Rate limited (needs 80ms) after 10 retries",
+        "2026-03-24: Rate limited (needs 80ms) after 10 retries",
+        "2026-03-25: Rate limited (needs 80ms) after 10 retries",
+        "2026-03-26: Rate limited (needs 60ms) after 10 retries",
+        "2026-03-27: Rate limited (needs 100ms) after 10 retries",
+        "2026-03-28: Rate limited (needs 100ms) after 10 retries"
+      ],
+      "added": 0,
+      "skipped": 0,
+      "errors": 12,
+      "timestamp": "2026-03-18T03:47:46.079Z"
+    },
+    {
+      "action": "bootstrap",
+      "mode": "execute",
+      "location": "UT Ogden | Riverdale 082",
+      "details": [
+        "2026-03-17: Rate limited",
+        "2026-03-18: Rate limited",
+        "2026-03-19: Rate limited",
+        "2026-03-20: Rate limited",
+        "2026-03-21: Rate limited",
+        "2026-03-22: Rate limited",
+        "2026-03-23: Rate limited",
+        "2026-03-24: Rate limited",
+        "2026-03-25: Rate limited",
+        "2026-03-26: Rate limited"
+      ],
+      "added": 0,
+      "skipped": 0,
+      "errors": 14,
+      "timestamp": "2026-03-18T03:37:29.286Z"
+    },
+    {
+      "action": "bootstrap",
+      "mode": "execute",
+      "location": "UT Salt Lake City | Sugar House 126",
+      "details": [
+        "2026-03-17: Rate limited",
+        "2026-03-18: Rate limited",
+        "2026-03-19: Rate limited",
+        "2026-03-20: Rate limited",
+        "2026-03-21: Rate limited",
+        "2026-03-22: Rate limited",
+        "2026-03-23: Rate limited",
+        "2026-03-24: Rate limited",
+        "2026-03-25: Rate limited",
+        "2026-03-26: Rate limited"
+      ],
+      "added": 0,
+      "skipped": 0,
+      "errors": 14,
+      "timestamp": "2026-03-18T03:36:42.278Z"
+    },
+    {
+      "action": "bootstrap",
+      "mode": "execute",
+      "location": "UT West Valley | Valley Fair 176",
+      "details": [
+        "2026-03-17: Rate limited",
+        "2026-03-18: Rate limited",
+        "2026-03-19: Rate limited",
+        "2026-03-20: Rate limited",
+        "2026-03-21: Rate limited",
+        "2026-03-22: Rate limited",
+        "2026-03-23: Rate limited",
+        "2026-03-24: Rate limited",
+        "2026-03-25: Rate limited",
+        "2026-03-26: Rate limited"
+      ],
+      "added": 0,
+      "skipped": 0,
+      "errors": 14,
+      "timestamp": "2026-03-18T03:35:29.759Z"
+    },
+    {
+      "action": "bootstrap",
+      "mode": "execute",
+      "location": "UT Farmington | Farmington Station 227",
+      "details": [
+        "2026-03-17: Rate limited",
+        "2026-03-18: Rate limited",
+        "2026-03-19: Rate limited",
+        "2026-03-20: Rate limited",
+        "2026-03-21: Rate limited",
+        "2026-03-22: Rate limited",
+        "2026-03-23: Rate limited",
+        "2026-03-24: Rate limited",
+        "2026-03-25: Rate limited",
+        "2026-03-26: Rate limited"
+      ],
+      "added": 0,
+      "skipped": 0,
+      "errors": 14,
+      "timestamp": "2026-03-18T03:34:53.239Z"
+    },
+    {
+      "action": "bootstrap",
+      "mode": "execute",
+      "location": "UT Riverton | Mountain View Village 237",
+      "details": [
+        "2026-03-28: Rate limited",
+        "2026-03-29: Rate limited",
+        "2026-03-30: Rate limited"
+      ],
+      "added": 0,
+      "skipped": 0,
+      "errors": 3,
+      "timestamp": "2026-03-18T03:34:13.017Z"
+    },
+    {
+      "action": "bootstrap",
+      "mode": "execute",
+      "location": "UT Bountiful | Colonial Square 042",
+      "details": [
+        "Failed to fetch data: API limit exceeded. Query cost is 16 and you have 9 points available. Please wait 140ms and try again.: {\"response\":{\"errors\":[{\"message\":\"API limit exceeded. Query cost is 16 and you have 9 points available. Please wait 140ms and try again.\"}],\"status\":429,\"headers\":{},\"body\":\"{\\\"errors\\\":[{\\\"message\\\":\\\"API limit exceeded. Query cost is 16 and you have 9 points available. Please wait 140ms and try again.\\\"}]}\"},\"request\":{\"query\":\"\\n  query GetTimeblocks($locationId: ID!, $first: Int, $after: String) {\\n    timeblocks(locationId: $locationId, first: $first, after: $after) {\\n      edges {\\n        node {\\n          id\\n          startAt\\n          endAt\\n          duration\\n          title\\n          reason\\n          cancelled\\n          staff {\\n            id\\n            name\\n          }\\n        }\\n      }\\n      pageInfo {\\n        hasNextPage\\n        endCursor\\n      }\\n    }\\n  }\\n\",\"variables\":{\"locationId\":\"urn:blvd:Location:e85763a3-1f61-43e4-929e-fd89f8a368ed\",\"first\":100,\"after\":\"YXJyYXljb25uZWN0aW9uOjM5OQ==\"}}}"
+      ],
+      "added": 0,
+      "skipped": 0,
+      "errors": 1,
+      "timestamp": "2026-03-18T03:26:23.064Z"
+    },
+    {
+      "action": "bootstrap",
+      "mode": "execute",
+      "location": "UT Ogden | Riverdale 082",
+      "details": [
+        "Failed to fetch data: API limit exceeded. Query cost is 16 and you have 5 points available. Please wait 220ms and try again.: {\"response\":{\"errors\":[{\"message\":\"API limit exceeded. Query cost is 16 and you have 5 points available. Please wait 220ms and try again.\"}],\"status\":429,\"headers\":{},\"body\":\"{\\\"errors\\\":[{\\\"message\\\":\\\"API limit exceeded. Query cost is 16 and you have 5 points available. Please wait 220ms and try again.\\\"}]}\"},\"request\":{\"query\":\"\\n  query GetTimeblocks($locationId: ID!, $first: Int, $after: String) {\\n    timeblocks(locationId: $locationId, first: $first, after: $after) {\\n      edges {\\n        node {\\n          id\\n          startAt\\n          endAt\\n          duration\\n          title\\n          reason\\n          cancelled\\n          staff {\\n            id\\n            name\\n          }\\n        }\\n      }\\n      pageInfo {\\n        hasNextPage\\n        endCursor\\n      }\\n    }\\n  }\\n\",\"variables\":{\"locationId\":\"urn:blvd:Location:d1a666f5-a1c3-4aa7-a947-7ef73324ff7d\",\"first\":100,\"after\":\"YXJyYXljb25uZWN0aW9uOjQ5OQ==\"}}}"
+      ],
+      "added": 0,
+      "skipped": 0,
+      "errors": 1,
+      "timestamp": "2026-03-18T03:26:16.841Z"
+    },
+    {
+      "action": "bootstrap",
+      "mode": "execute",
+      "location": "UT Salt Lake City | Sugar House 126",
+      "details": [
+        "Failed to fetch data: API limit exceeded. Query cost is 16 and you have 11 points available. Please wait 100ms and try again.: {\"response\":{\"errors\":[{\"message\":\"API limit exceeded. Query cost is 16 and you have 11 points available. Please wait 100ms and try again.\"}],\"status\":429,\"headers\":{},\"body\":\"{\\\"errors\\\":[{\\\"message\\\":\\\"API limit exceeded. Query cost is 16 and you have 11 points available. Please wait 100ms and try again.\\\"}]}\"},\"request\":{\"query\":\"\\n  query GetTimeblocks($locationId: ID!, $first: Int, $after: String) {\\n    timeblocks(locationId: $locationId, first: $first, after: $after) {\\n      edges {\\n        node {\\n          id\\n          startAt\\n          endAt\\n          duration\\n          title\\n          reason\\n          cancelled\\n          staff {\\n            id\\n            name\\n          }\\n        }\\n      }\\n      pageInfo {\\n        hasNextPage\\n        endCursor\\n      }\\n    }\\n  }\\n\",\"variables\":{\"locationId\":\"urn:blvd:Location:1d546022-4d3d-4f0f-9414-321e6251b595\",\"first\":100,\"after\":\"YXJyYXljb25uZWN0aW9uOjM5OQ==\"}}}"
+      ],
+      "added": 0,
+      "skipped": 0,
+      "errors": 1,
+      "timestamp": "2026-03-18T03:26:12.856Z"
+    },
+    {
+      "action": "bootstrap",
+      "mode": "execute",
+      "location": "UT West Valley | Valley Fair 176",
+      "details": [
+        "Failed to fetch data: API limit exceeded. Query cost is 16 and you have 7 points available. Please wait 180ms and try again.: {\"response\":{\"errors\":[{\"message\":\"API limit exceeded. Query cost is 16 and you have 7 points available. Please wait 180ms and try again.\"}],\"status\":429,\"headers\":{},\"body\":\"{\\\"errors\\\":[{\\\"message\\\":\\\"API limit exceeded. Query cost is 16 and you have 7 points available. Please wait 180ms and try again.\\\"}]}\"},\"request\":{\"query\":\"\\n  query GetTimeblocks($locationId: ID!, $first: Int, $after: String) {\\n    timeblocks(locationId: $locationId, first: $first, after: $after) {\\n      edges {\\n        node {\\n          id\\n          startAt\\n          endAt\\n          duration\\n          title\\n          reason\\n          cancelled\\n          staff {\\n            id\\n            name\\n          }\\n        }\\n      }\\n      pageInfo {\\n        hasNextPage\\n        endCursor\\n      }\\n    }\\n  }\\n\",\"variables\":{\"locationId\":\"urn:blvd:Location:0deaa531-9fc0-4ccc-98d8-66f9b988c66c\",\"first\":100,\"after\":\"YXJyYXljb25uZWN0aW9uOjQ5OQ==\"}}}"
+      ],
+      "added": 0,
+      "skipped": 0,
+      "errors": 1,
+      "timestamp": "2026-03-18T03:26:09.005Z"
+    },
+    {
+      "action": "bootstrap",
+      "mode": "execute",
+      "location": "UT Farmington | Farmington Station 227",
+      "details": [
+        "2026-03-17: Rate limited",
+        "2026-03-18: Rate limited",
+        "2026-03-19: Rate limited",
+        "2026-03-20: Rate limited",
+        "2026-03-21: Rate limited",
+        "2026-03-22: Rate limited",
+        "2026-03-23: Rate limited",
+        "2026-03-24: Rate limited",
+        "2026-03-25: Rate limited",
+        "2026-03-26: Rate limited"
+      ],
+      "added": 0,
+      "skipped": 0,
+      "errors": 14,
+      "timestamp": "2026-03-18T03:26:05.096Z"
+    },
+    {
+      "action": "bootstrap",
+      "mode": "execute",
+      "location": "UT Riverton | Mountain View Village 237",
+      "details": [
+        "2026-03-17: Rate limited",
+        "2026-03-18: Rate limited",
+        "2026-03-19: Rate limited",
+        "2026-03-20: Rate limited",
+        "2026-03-21: Rate limited",
+        "2026-03-22: Rate limited",
+        "2026-03-23: Rate limited",
+        "2026-03-24: Rate limited",
+        "2026-03-25: Rate limited",
+        "2026-03-26: Rate limited"
+      ],
+      "added": 0,
+      "skipped": 0,
+      "errors": 14,
+      "timestamp": "2026-03-18T03:25:32.091Z"
+    },
+    {
+      "action": "bootstrap",
+      "mode": "execute",
+      "location": "UT Heber City | Valley Station 236",
+      "details": [
+        "2026-03-23: Rate limited",
+        "2026-03-24: Rate limited",
+        "2026-03-25: Rate limited",
+        "2026-03-26: Rate limited",
+        "2026-03-27: Rate limited",
+        "2026-03-28: Rate limited",
+        "2026-03-29: Rate limited",
+        "2026-03-30: Rate limited"
+      ],
+      "added": 0,
+      "skipped": 0,
+      "errors": 8,
+      "timestamp": "2026-03-18T03:24:48.596Z"
+    },
+    {
+      "action": "bootstrap",
+      "mode": "execute",
+      "location": "UT Bountiful | Colonial Square 042",
+      "details": [],
+      "added": 0,
+      "skipped": 0,
+      "errors": 1,
+      "timestamp": "2026-03-18T02:46:53.282Z"
+    },
+    {
+      "action": "bootstrap",
+      "mode": "execute",
+      "location": "UT Ogden | Riverdale 082",
+      "details": [],
+      "added": 0,
+      "skipped": 0,
+      "errors": 1,
+      "timestamp": "2026-03-18T02:46:53.215Z"
+    },
+    {
+      "action": "bootstrap",
+      "mode": "execute",
+      "location": "UT Salt Lake City | Sugar House 126",
+      "details": [],
+      "added": 0,
+      "skipped": 0,
+      "errors": 1,
+      "timestamp": "2026-03-18T02:46:53.148Z"
+    },
+    {
+      "action": "bootstrap",
+      "mode": "execute",
+      "location": "UT West Valley | Valley Fair 176",
+      "details": [],
+      "added": 0,
+      "skipped": 0,
+      "errors": 1,
+      "timestamp": "2026-03-18T02:46:52.974Z"
+    },
+    {
+      "action": "bootstrap",
+      "mode": "execute",
+      "location": "UT Farmington | Farmington Station 227",
+      "details": [],
+      "added": 0,
+      "skipped": 0,
+      "errors": 1,
+      "timestamp": "2026-03-18T02:46:52.905Z"
+    },
+    {
+      "action": "bootstrap",
+      "mode": "execute",
+      "location": "UT Riverton | Mountain View Village 237",
+      "details": [],
+      "added": 0,
+      "skipped": 0,
+      "errors": 1,
+      "timestamp": "2026-03-18T02:46:52.679Z"
+    },
+    {
+      "action": "bootstrap",
+      "mode": "execute",
+      "location": "UT Heber City | Valley Station 236",
+      "details": [],
+      "added": 0,
+      "skipped": 0,
+      "errors": 0,
+      "timestamp": "2026-03-18T02:45:34.112Z"
+    }
+  ]
+}
