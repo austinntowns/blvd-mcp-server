@@ -2230,6 +2230,9 @@ app.post("/webhook/boulevard", async (c) => {
       const analysis = analyzeBTBBlocks(shift, appointments, timeblocks, config);
       const staffName = shift.staffMember.displayName || shift.staffMember.name;
 
+      // Debug: log analysis results
+      console.log(`[Webhook] Analysis for ${staffName}: util=${analysis.utilizationPercent}%, startBTB=${analysis.startBlock ? 'yes' : 'no'}, endBTB=${analysis.endBlock ? 'yes' : 'no'}, endGap=${analysis.endGapMinutes}min, shouldRemoveEnd=${analysis.endBlockShouldRemove}`);
+
       // REMOVAL: Remove BTB blocks when utilization is high and appointments are close
       if (analysis.startBlockShouldRemove && analysis.startBlock) {
         try {
