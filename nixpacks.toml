@@ -5,4 +5,4 @@ NIXPACKS_NODE_VERSION = "22"
 cmds = ["echo 'Build complete'"]
 
 [start]
-cmd = "node start.mjs"
+cmd = "/bin/bash -c 'echo RAILWAY_START && exec node start.mjs'"
