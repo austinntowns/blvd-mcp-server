@@ -2,7 +2,7 @@ import { createServer } from "http";
 
 const PORT = process.env.PORT || 8080;
 
-const server = http.createServer((req, res) => {
+const server = createServer((req, res) => {
   console.log(`${new Date().toISOString()} ${req.method} ${req.url}`);
 
   if (req.url === "/health") {
