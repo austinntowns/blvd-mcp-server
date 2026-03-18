@@ -5,6 +5,20 @@
  * Access: http://localhost:3001/btb-admin
  */
 
+console.log("[BOOT] admin-server.ts loading...");
+console.log("[BOOT] process.version:", process.version);
+console.log("[BOOT] process.cwd():", process.cwd());
+
+process.on("uncaughtException", (err) => {
+  console.error("[CRASH] Uncaught exception:", err);
+  process.exit(1);
+});
+
+process.on("unhandledRejection", (reason, promise) => {
+  console.error("[CRASH] Unhandled rejection at:", promise, "reason:", reason);
+  process.exit(1);
+});
+
 import "dotenv/config";
 import { Hono } from "hono";
 import { serve } from "@hono/node-server";
