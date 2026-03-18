@@ -5,7 +5,7 @@
     "buildCommand": "echo 'Skipping mcp-use build for BTB server'"
   },
   "deploy": {
-    "startCommand": "node server.js",
+    "startCommand": "npx tsx admin-server.ts",
     "restartPolicyType": "ON_FAILURE",
     "restartPolicyMaxRetries": 3
   }
