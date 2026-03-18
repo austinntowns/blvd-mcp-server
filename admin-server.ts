@@ -2372,11 +2372,22 @@ app.get("/health", (c) => {
 });
 
 const PORT = parseInt(process.env.PORT || "3001", 10);
+console.log(`[STARTUP] Starting BTB Admin Server...`);
+console.log(`[STARTUP] NODE_ENV: ${process.env.NODE_ENV}`);
+console.log(`[STARTUP] PORT: ${PORT}`);
+console.log(`[STARTUP] __dirname: ${__dirname}`);
+console.log(`[STARTUP] ENROLLMENT_FILE: ${ENROLLMENT_FILE}`);
 console.log(`BTB Admin Server running at http://localhost:${PORT}/btb-admin`);
 console.log(`Webhook endpoint: http://localhost:${PORT}/webhook/boulevard`);
 
-serve({
-  fetch: app.fetch,
-  port: PORT,
-  hostname: "0.0.0.0",
-});
+try {
+  serve({
+    fetch: app.fetch,
+    port: PORT,
+    hostname: "0.0.0.0",
+  });
+  console.log(`[STARTUP] Server started successfully on port ${PORT}`);
+} catch (e) {
+  console.error(`[STARTUP] Failed to start server:`, e);
+  process.exit(1);
+}
