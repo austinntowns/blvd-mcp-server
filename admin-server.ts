@@ -2160,6 +2160,10 @@ app.post("/webhook/boulevard", async (c) => {
       return c.json({ status: "ignored", reason: "not an appointment event" });
     }
 
+    // Determine if this is a cancellation (for adding BTBs) or booking (for removing BTBs)
+    const isCancellation = eventType?.toLowerCase().includes("cancel");
+    console.log(`[Webhook] Event type: ${eventType}, isCancellation: ${isCancellation}`);
+
     // Extract appointment data - Boulevard uses data.node format
     const appointment = body?.data?.node || body?.data?.appointment || body?.appointment || body?.data;
     if (!appointment) {
@@ -2255,56 +2259,58 @@ app.post("/webhook/boulevard", async (c) => {
         }
       }
 
-      // AUTO-ADD: Tiered BTB based on gap size
+      // AUTO-ADD: Only on cancellations - Tiered BTB based on gap size
       // 120+ min gap → 60 min BTB
       // 90-119 min gap → 30 min BTB
-      const startGap = analysis.minutesToFirstAppointment;
-      const endGap = analysis.minutesAfterLastAppointment;
+      if (isCancellation) {
+        const startGap = analysis.minutesToFirstAppointment;
+        const endGap = analysis.minutesAfterLastAppointment;
 
-      // Check start of shift
-      if (!analysis.startBlock && startGap !== undefined && startGap >= 90) {
-        const btbDuration = startGap >= 120 ? 60 : 30;
-        try {
-          const shiftStart = new Date(shift.startAt);
-          await createTimeblock({
-            locationId,
-            staffId: shift.staffMember.id,
-            startTime: shiftStart.toISOString(),
-            duration: btbDuration,
-            title: "BTB",
-          });
-          addedBlocks.push(
-            `${staffName} start BTB ${btbDuration}min (${startGap}min space)`
-          );
-          console.log(`[Webhook] Added: ${staffName} start BTB (${btbDuration}min for ${startGap}min gap)`);
-        } catch (e) {
-          const errMsg = `Failed to add ${staffName} start BTB: ${e instanceof Error ? e.message : "Unknown"}`;
-          errors.push(errMsg);
-          console.error(`[Webhook] Error: ${errMsg}`);
+        // Check start of shift
+        if (!analysis.startBlock && startGap !== undefined && startGap >= 90) {
+          const btbDuration = startGap >= 120 ? 60 : 30;
+          try {
+            const shiftStart = new Date(shift.startAt);
+            await createTimeblock({
+              locationId,
+              staffId: shift.staffMember.id,
+              startTime: shiftStart.toISOString(),
+              duration: btbDuration,
+              title: "BTB",
+            });
+            addedBlocks.push(
+              `${staffName} start BTB ${btbDuration}min (${startGap}min space)`
+            );
+            console.log(`[Webhook] Added: ${staffName} start BTB (${btbDuration}min for ${startGap}min gap)`);
+          } catch (e) {
+            const errMsg = `Failed to add ${staffName} start BTB: ${e instanceof Error ? e.message : "Unknown"}`;
+            errors.push(errMsg);
+            console.error(`[Webhook] Error: ${errMsg}`);
+          }
         }
-      }
 
-      // Check end of shift
-      if (!analysis.endBlock && endGap !== undefined && endGap >= 90) {
-        const btbDuration = endGap >= 120 ? 60 : 30;
-        try {
-          const shiftEnd = new Date(shift.endAt);
-          const btbStart = new Date(shiftEnd.getTime() - btbDuration * 60 * 1000);
-          await createTimeblock({
-            locationId,
-            staffId: shift.staffMember.id,
-            startTime: btbStart.toISOString(),
-            duration: btbDuration,
-            title: "BTB",
-          });
-          addedBlocks.push(
-            `${staffName} end BTB ${btbDuration}min (${endGap}min space)`
-          );
-          console.log(`[Webhook] Added: ${staffName} end BTB (${btbDuration}min for ${endGap}min gap)`);
-        } catch (e) {
-          const errMsg = `Failed to add ${staffName} end BTB: ${e instanceof Error ? e.message : "Unknown"}`;
-          errors.push(errMsg);
-          console.error(`[Webhook] Error: ${errMsg}`);
+        // Check end of shift
+        if (!analysis.endBlock && endGap !== undefined && endGap >= 90) {
+          const btbDuration = endGap >= 120 ? 60 : 30;
+          try {
+            const shiftEnd = new Date(shift.endAt);
+            const btbStart = new Date(shiftEnd.getTime() - btbDuration * 60 * 1000);
+            await createTimeblock({
+              locationId,
+              staffId: shift.staffMember.id,
+              startTime: btbStart.toISOString(),
+              duration: btbDuration,
+              title: "BTB",
+            });
+            addedBlocks.push(
+              `${staffName} end BTB ${btbDuration}min (${endGap}min space)`
+            );
+            console.log(`[Webhook] Added: ${staffName} end BTB (${btbDuration}min for ${endGap}min gap)`);
+          } catch (e) {
+            const errMsg = `Failed to add ${staffName} end BTB: ${e instanceof Error ? e.message : "Unknown"}`;
+            errors.push(errMsg);
+            console.error(`[Webhook] Error: ${errMsg}`);
+          }
         }
       }
     }
