@@ -2296,7 +2296,7 @@ app.get("/health", (c) => {
   });
 });
 
-const PORT = 3001;
+const PORT = parseInt(process.env.PORT || "3001", 10);
 console.log(`BTB Admin Server running at http://localhost:${PORT}/btb-admin`);
 console.log(`Webhook endpoint: http://localhost:${PORT}/webhook/boulevard`);
 
