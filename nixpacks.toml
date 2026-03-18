@@ -1,0 +1,5 @@
+[phases.build]
+cmds = ["echo 'Skipping build'"]
+
+[start]
+cmd = "npm run btb:server"
