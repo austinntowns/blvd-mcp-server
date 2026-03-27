@@ -1,0 +1,72 @@
+{
+  "owned": [
+    {
+      "id": "urn:blvd:Location:e85763a3-1f61-43e4-929e-fd89f8a368ed",
+      "name": "Bountiful | Colonial Square 042",
+      "city": "Bountiful",
+      "shortName": "Bountiful"
+    },
+    {
+      "id": "urn:blvd:Location:61921eab-3a5a-4858-a969-1b85af789076",
+      "name": "Farmington | Farmington Station 227",
+      "city": "Farmington",
+      "shortName": "Farmington"
+    },
+    {
+      "id": "urn:blvd:Location:380d3d5a-2b83-4616-80c0-2384b79470f7",
+      "name": "Heber City | Valley Station 236",
+      "city": "Heber City",
+      "shortName": "Heber City"
+    },
+    {
+      "id": "urn:blvd:Location:d1a666f5-a1c3-4aa7-a947-7ef73324ff7d",
+      "name": "Ogden | Riverdale 082",
+      "city": "Riverdale",
+      "shortName": "Ogden"
+    },
+    {
+      "id": "urn:blvd:Location:9a773de9-5af5-4919-a969-1071158cfd57",
+      "name": "Riverton | Mountain View Village 237",
+      "city": "Riverton",
+      "shortName": "Riverton"
+    },
+    {
+      "id": "urn:blvd:Location:1d546022-4d3d-4f0f-9414-321e6251b595",
+      "name": "Salt Lake City | Sugar House 126",
+      "city": "Salt Lake City",
+      "shortName": "Sugar House"
+    },
+    {
+      "id": "urn:blvd:Location:0deaa531-9fc0-4ccc-98d8-66f9b988c66c",
+      "name": "West Valley | Valley Fair 176",
+      "city": "West Valley City",
+      "shortName": "West Valley"
+    }
+  ],
+  "acquisitionTargets": [
+    {
+      "id": "urn:blvd:Location:77b17ec9-0209-4e4d-ae44-bf5a35abe132",
+      "name": "American Fork | Meadows 065",
+      "city": "American Fork",
+      "shortName": "American Fork"
+    },
+    {
+      "id": "urn:blvd:Location:e9146b5f-9e7e-4060-91d1-eddc0ccef310",
+      "name": "Draper | Draper Peaks 103",
+      "city": "Draper",
+      "shortName": "Draper"
+    },
+    {
+      "id": "urn:blvd:Location:151076a3-21c7-4a77-ac3b-4db80b85b03e",
+      "name": "Midvale | Fort Union 043",
+      "city": "Midvale",
+      "shortName": "Midvale"
+    },
+    {
+      "id": "urn:blvd:Location:b3935cb1-293f-4c1c-b5b5-ac2f7ad6aa15",
+      "name": "Spanish Fork | Central 192",
+      "city": "Spanish Fork",
+      "shortName": "Spanish Fork"
+    }
+  ]
+}

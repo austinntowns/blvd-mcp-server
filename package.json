@@ -32,6 +32,7 @@
     "btb:webhooks": "tsx scripts/setup-webhooks.ts"
   },
   "dependencies": {
+    "@google-cloud/bigquery": "^8.1.1",
     "@hono/node-server": "^1.19.11",
     "@openai/apps-sdk-ui": "^0.2.1",
     "@tanstack/react-query": "^5.90.21",

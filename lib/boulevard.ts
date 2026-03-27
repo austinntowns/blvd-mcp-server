@@ -1326,3 +1326,187 @@ export async function deleteWebhook(webhookId: string): Promise<void> {
   const client = getClient();
   await client.request(DELETE_WEBHOOK_MUTATION, { input: { id: webhookId } });
 }
+
+// ============================================
+// SERVICE MANAGEMENT
+// ============================================
+
+export interface Service {
+  id: string;
+  name: string;
+  active: boolean;
+  defaultDuration: number;
+  defaultPrice: number;
+  category?: { id: string; name: string };
+}
+
+const LIST_SERVICES_QUERY = gql`
+  query GetServices($first: Int!, $after: String) {
+    services(first: $first, after: $after) {
+      edges {
+        node {
+          id
+          name
+          active
+          defaultDuration
+          defaultPrice
+          category { id name }
+        }
+      }
+      pageInfo { hasNextPage endCursor }
+    }
+  }
+`;
+
+const GET_SERVICE_QUERY = gql`
+  query GetService($id: ID!) {
+    service(id: $id) {
+      id
+      name
+      active
+      defaultDuration
+      defaultPrice
+      category { id name }
+    }
+  }
+`;
+
+const SERVICE_DEACTIVATE_AT_LOCATION_MUTATION = gql`
+  mutation ServiceDeactivateAtLocation($input: ServiceDeactivateAtLocationInput!) {
+    serviceDeactivateAtLocation(input: $input) {
+      serviceId
+    }
+  }
+`;
+
+const SERVICE_ACTIVATE_AT_LOCATION_MUTATION = gql`
+  mutation ServiceActivateAtLocation($input: ServiceActivateAtLocationInput!) {
+    serviceActivateAtLocation(input: $input) {
+      serviceId
+    }
+  }
+`;
+
+interface ServicesResponse {
+  services: {
+    edges: { node: Service }[];
+    pageInfo: { hasNextPage: boolean; endCursor: string | null };
+  };
+}
+
+export async function getServices(): Promise<Service[]> {
+  const client = getClient();
+  const allServices: Service[] = [];
+  let hasNextPage = true;
+  let cursor: string | null = null;
+
+  while (hasNextPage) {
+    const data: ServicesResponse = await client.request<ServicesResponse>(
+      LIST_SERVICES_QUERY,
+      { first: 100, after: cursor }
+    );
+
+    for (const edge of data.services.edges) {
+      allServices.push(edge.node);
+    }
+
+    hasNextPage = data.services.pageInfo.hasNextPage;
+    cursor = data.services.pageInfo.endCursor;
+  }
+
+  return allServices;
+}
+
+export async function getService(serviceId: string): Promise<Service | null> {
+  const client = getClient();
+  try {
+    const data = await client.request<{ service: Service }>(GET_SERVICE_QUERY, { id: serviceId });
+    return data.service;
+  } catch (error) {
+    console.error(`Failed to get service ${serviceId}:`, error);
+    return null;
+  }
+}
+
+export async function deactivateServiceAtLocation(
+  serviceId: string,
+  locationId: string
+): Promise<string> {
+  const client = getClient();
+  const data = await client.request<{ serviceDeactivateAtLocation: { serviceId: string } }>(
+    SERVICE_DEACTIVATE_AT_LOCATION_MUTATION,
+    { input: { serviceId, locationId } }
+  );
+  return data.serviceDeactivateAtLocation.serviceId;
+}
+
+export async function activateServiceAtLocation(
+  serviceId: string,
+  locationId: string
+): Promise<string> {
+  const client = getClient();
+  const data = await client.request<{ serviceActivateAtLocation: { serviceId: string } }>(
+    SERVICE_ACTIVATE_AT_LOCATION_MUTATION,
+    { input: { serviceId, locationId } }
+  );
+  return data.serviceActivateAtLocation.serviceId;
+}
+
+// Deactivate a service at ALL locations (business-wide)
+export async function deactivateServiceBusinessWide(serviceId: string): Promise<{
+  serviceId: string;
+  deactivatedAt: string[];
+  errors: { locationId: string; error: string }[];
+}> {
+  const locations = await getLocations();
+  const deactivatedAt: string[] = [];
+  const errors: { locationId: string; error: string }[] = [];
+
+  for (const location of locations) {
+    try {
+      await deactivateServiceAtLocation(serviceId, location.id);
+      deactivatedAt.push(location.name);
+    } catch (e) {
+      // Service might already be inactive at this location, or not available there
+      errors.push({
+        locationId: location.id,
+        error: e instanceof Error ? e.message : "Unknown error",
+      });
+    }
+  }
+
+  return {
+    serviceId,
+    deactivatedAt,
+    errors,
+  };
+}
+
+// Activate a service at ALL locations (business-wide)
+export async function activateServiceBusinessWide(serviceId: string): Promise<{
+  serviceId: string;
+  activatedAt: string[];
+  errors: { locationId: string; error: string }[];
+}> {
+  const locations = await getLocations();
+  const activatedAt: string[] = [];
+  const errors: { locationId: string; error: string }[] = [];
+
+  for (const location of locations) {
+    try {
+      await activateServiceAtLocation(serviceId, location.id);
+      activatedAt.push(location.name);
+    } catch (e) {
+      errors.push({
+        locationId: location.id,
+        error: e instanceof Error ? e.message : "Unknown error",
+      });
+    }
+  }
+
+  return {
+    serviceId,
+    activatedAt,
+    errors,
+  };
+}

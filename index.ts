@@ -14,9 +14,16 @@ import {
   analyzeBTBBlocks,
   executeBTBActions,
   getTimeblocksInRange,
+  getServices,
+  getService,
+  deactivateServiceAtLocation,
+  activateServiceAtLocation,
+  deactivateServiceBusinessWide,
+  activateServiceBusinessWide,
   type ShiftUtilization,
   type BTBCleanupConfig,
   type BTBAnalysisResult,
+  type Service,
   DEFAULT_BTB_CONFIG,
 } from "./lib/boulevard.js";
 
@@ -435,6 +442,10 @@ server.tool(
         utilizationThreshold,
         minGapMinutes,
         lookAheadDays,
+        emptyWindowMinutes: 120,
+        btbDurationMinutes: 60,
+        autoAddGapMinutes: 90,
+        autoAddBtbDuration: 30,
       };
 
       // Get locations to analyze
@@ -592,6 +603,10 @@ server.tool(
         utilizationThreshold,
         minGapMinutes,
         lookAheadDays,
+        emptyWindowMinutes: 120,
+        btbDurationMinutes: 60,
+        autoAddGapMinutes: 90,
+        autoAddBtbDuration: 30,
       };
 
       // Get locations to process
@@ -779,6 +794,160 @@ server.tool(
     } catch (e) {
       return error(
         `Failed to fetch appointments: ${e instanceof Error ? e.message : "Unknown error"}`
+      );
+    }
+  }
+);
+
+// ============================================
+// SERVICE MANAGEMENT TOOLS
+// ============================================
+
+server.tool(
+  {
+    name: "list-services",
+    description:
+      "List all services in Boulevard. Returns service ID, name, active status, duration, and price.",
+    schema: z.object({
+      activeOnly: z
+        .boolean()
+        .optional()
+        .default(false)
+        .describe("If true, only return active services"),
+    }),
+  },
+  async ({ activeOnly }) => {
+    try {
+      let services = await getServices();
+      if (activeOnly) {
+        services = services.filter((s) => s.active);
+      }
+      return object({
+        count: services.length,
+        services: services.map((svc) => ({
+          id: svc.id,
+          name: svc.name,
+          active: svc.active,
+          duration: svc.defaultDuration,
+          price: svc.defaultPrice,
+          category: svc.category?.name || null,
+        })),
+      });
+    } catch (e) {
+      return error(
+        `Failed to fetch services: ${e instanceof Error ? e.message : "Unknown error"}`
+      );
+    }
+  }
+);
+
+server.tool(
+  {
+    name: "get-service",
+    description: "Get details for a specific service by ID",
+    schema: z.object({
+      serviceId: z.string().describe("The Boulevard service ID (e.g., urn:blvd:Service:...)"),
+    }),
+  },
+  async ({ serviceId }) => {
+    try {
+      const service = await getService(serviceId);
+      if (!service) {
+        return error(`Service not found: ${serviceId}`);
+      }
+      return object({
+        id: service.id,
+        name: service.name,
+        active: service.active,
+        duration: service.defaultDuration,
+        price: service.defaultPrice,
+        category: service.category?.name || null,
+      });
+    } catch (e) {
+      return error(
+        `Failed to fetch service: ${e instanceof Error ? e.message : "Unknown error"}`
+      );
+    }
+  }
+);
+
+server.tool(
+  {
+    name: "deactivate-service",
+    description:
+      "Deactivate a service at ALL locations in Boulevard, making it unavailable for new bookings. CAUTION: This affects all locations business-wide.",
+    schema: z.object({
+      serviceId: z.string().describe("The Boulevard service ID (e.g., urn:blvd:Service:...)"),
+      confirm: z
+        .boolean()
+        .describe("Must be true to confirm deactivation. This is a safety check."),
+    }),
+  },
+  async ({ serviceId, confirm }) => {
+    if (!confirm) {
+      return error("Deactivation not confirmed. Set confirm=true to proceed.");
+    }
+    try {
+      // Get the service first to show what we're deactivating
+      const before = await getService(serviceId);
+      if (!before) {
+        return error(`Service not found: ${serviceId}`);
+      }
+
+      const result = await deactivateServiceBusinessWide(serviceId);
+      return object({
+        message: `Deactivated service "${before.name}" at ${result.deactivatedAt.length} locations`,
+        service: {
+          id: before.id,
+          name: before.name,
+        },
+        deactivatedAt: result.deactivatedAt,
+        errorsCount: result.errors.length,
+        errors: result.errors.slice(0, 5), // Show first 5 errors if any
+      });
+    } catch (e) {
+      return error(
+        `Failed to deactivate service: ${e instanceof Error ? e.message : "Unknown error"}`
+      );
+    }
+  }
+);
+
+server.tool(
+  {
+    name: "activate-service",
+    description: "Activate a service at ALL locations in Boulevard.",
+    schema: z.object({
+      serviceId: z.string().describe("The Boulevard service ID (e.g., urn:blvd:Service:...)"),
+      confirm: z
+        .boolean()
+        .describe("Must be true to confirm activation. This is a safety check."),
+    }),
+  },
+  async ({ serviceId, confirm }) => {
+    if (!confirm) {
+      return error("Activation not confirmed. Set confirm=true to proceed.");
+    }
+    try {
+      const before = await getService(serviceId);
+      if (!before) {
+        return error(`Service not found: ${serviceId}`);
+      }
+
+      const result = await activateServiceBusinessWide(serviceId);
+      return object({
+        message: `Activated service "${before.name}" at ${result.activatedAt.length} locations`,
+        service: {
+          id: before.id,
+          name: before.name,
+        },
+        activatedAt: result.activatedAt,
+        errorsCount: result.errors.length,
+        errors: result.errors.slice(0, 5),
+      });
+    } catch (e) {
+      return error(
+        `Failed to activate service: ${e instanceof Error ? e.message : "Unknown error"}`
       );
     }
   }
