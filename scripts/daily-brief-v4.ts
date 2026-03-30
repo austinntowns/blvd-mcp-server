@@ -1465,16 +1465,143 @@ async function generateBrief(targetDateStr?: string) {
 
   // Send summary to Pronto (Utah team chat)
   if (process.env.PRONTO_API_TOKEN && process.env.PRONTO_UTAH_CHAT_ID) {
-    const summary = [
-      `📊 Daily Brief — ${todayStr}`,
-      `Portfolio: ${portfolioYesterday} bookings yesterday (${formatPercent(velocityDelta)} vs avg)`,
-      `New clients: ${newClientsYesterday}`,
-      `Utilization: ${avgPastUtil}% (last 7d) → ${avgFutureUtil}% (next 7d)`,
-      `Capacity alerts: ${alertCount}`,
-      adData ? `Ad spend: $${adData.totalSpend.toFixed(0)} → $${adData.overallCPB.toFixed(2)} CPB` : null,
-      `\nTop recommendations:`,
-      ...recommendations.slice(0, 3).map(r => `• ${r}`),
-    ].filter(Boolean).join("\n");
+    const lines: string[] = [];
+
+    // Header
+    lines.push(`📊 Hello Sugar Utah — Daily Brief`);
+    lines.push(`${dayName}\n`);
+
+    // Action Items
+    lines.push(`🎯 ACTION ITEMS`);
+    if (recommendations.length === 0) {
+      lines.push(`✅ No urgent actions needed today.`);
+    } else {
+      for (const rec of recommendations) {
+        lines.push(`• ${rec}`);
+      }
+    }
+
+    // Portfolio Snapshot
+    lines.push(`\n📈 PORTFOLIO SNAPSHOT`);
+    lines.push(`Yesterday: ${portfolioYesterday} bookings (${formatPercent(velocityDelta)} vs avg) | ${newClientsYesterday} new clients`);
+    lines.push(`Utilization: ${avgPastUtil}% (last 7d) → ${avgFutureUtil}% (next 7d)`);
+    if (adData) {
+      lines.push(`Ads: $${adData.totalSpend.toFixed(0)} spent → ${adData.totalBookings} bookings → $${adData.overallCPB.toFixed(2)} CPB`);
+    }
+
+    // Capacity Alerts
+    if (allAlerts.length > 0) {
+      lines.push(`\n🚨 CAPACITY ALERTS (≥75%)`);
+      for (const alert of allAlerts.slice(0, 5)) {
+        lines.push(`• ${alert.location} | ${alert.day} ${alert.bucket} | ${alert.util}%`);
+      }
+    }
+
+    // Booking Velocity by Location
+    lines.push(`\n📅 BOOKING VELOCITY`);
+    for (const loc of sortedByBookings) {
+      const delta = loc.bookings7DayAvg > 0 ? Math.round(((loc.bookingsYesterday - loc.bookings7DayAvg) / loc.bookings7DayAvg) * 100) : 0;
+      const emoji = delta > 20 ? "🚀" : delta < -20 ? "⚠️" : "➡️";
+      lines.push(`${emoji} ${loc.shortName}: ${loc.bookingsYesterday} (${formatPercent(delta)}) | ${loc.newClientsYesterday} new`);
+    }
+
+    // Month-over-Month Revenue
+    lines.push(`\n📊 MONTH-OVER-MONTH`);
+    const sortedByRevenue = [...locationData].sort((a, b) => b.mtdRevenue - a.mtdRevenue);
+    for (const loc of sortedByRevenue) {
+      if (loc.mtdAppts === 0 && loc.lmAppts === 0 && loc.mtdRevenue === 0) continue;
+      const mtdRev = loc.mtdRevenue > 0 ? `$${(loc.mtdRevenue / 1000).toFixed(1)}k` : "—";
+      const lmRev = loc.lmRevenue > 0 ? `$${(loc.lmRevenue / 1000).toFixed(1)}k` : "—";
+      const revIcon = loc.mtdRevenue >= loc.lmRevenue ? "🟢" : "🔴";
+      lines.push(`${revIcon} ${loc.shortName}: ${mtdRev}/${lmRev} rev | ${loc.mtdAppts}/${loc.lmAppts} appts | ${loc.mtdNew}/${loc.lmNew} new`);
+    }
+
+    // Utilization Comparison
+    lines.push(`\n🏆 UTILIZATION`);
+    for (const loc of locationData) {
+      const trendEmoji = loc.utilizationTrend === null ? "—" :
+        loc.utilizationTrend > 5 ? "📈" : loc.utilizationTrend < -5 ? "📉" : "➡️";
+      lines.push(`${loc.shortName}: ${loc.pastUtilization}% → ${loc.utilization}% ${trendEmoji}`);
+    }
+
+    // Ad Performance by Location
+    if (adData && adData.locations.length > 0) {
+      lines.push(`\n💰 ADS BY LOCATION`);
+      lines.push(`Google: $${adData.totalGoogleSpend.toFixed(0)} → ${adData.totalGoogleBookings}bk ($${adData.googleCPB.toFixed(2)} CPB)`);
+      lines.push(`Meta: $${adData.totalMetaSpend.toFixed(0)} → ${adData.totalMetaBookings}bk ($${adData.metaCPB.toFixed(2)} CPB)`);
+      for (const loc of adData.locations.sort((a, b) => b.totalSpend - a.totalSpend)) {
+        const gCpb = loc.google.costPerBooking > 0 ? `$${loc.google.costPerBooking.toFixed(0)}` : "—";
+        const mCpb = loc.meta.costPerBooking > 0 ? `$${loc.meta.costPerBooking.toFixed(0)}` : "—";
+        lines.push(`• ${loc.shortName}: G $${loc.google.spend.toFixed(0)}/${loc.google.bookings}bk (${gCpb}) | M $${loc.meta.spend.toFixed(0)}/${loc.meta.bookings}bk (${mCpb})`);
+      }
+    }
+
+    // MCR by Location
+    if (locationsWithMcr.length > 0) {
+      lines.push(`\n🎯 MCR% (Membership Conversion)`);
+      for (const loc of locationsWithMcr.sort((a, b) => b.locationMcr.mcr - a.locationMcr.mcr)) {
+        const emoji = loc.locationMcr.mcr >= 50 ? "🟢" : loc.locationMcr.mcr >= 25 ? "🟡" : "🔴";
+        lines.push(`${emoji} ${loc.shortName}: ${loc.locationMcr.mcr}% (${loc.locationMcr.memberships}/${loc.locationMcr.newClients})`);
+      }
+    }
+
+    // MCR by Esthetician
+    const combinedStaffForPronto = (bqData.combinedStaffMcr || [])
+      .map((s: Record<string, unknown>) => ({
+        name: s.staff as string,
+        newClients: Number(s.new_clients),
+        memberships: Number(s.memberships),
+        mcr: Number(s.mcr_pct) || 0,
+      }))
+      .sort((a: { mcr: number }, b: { mcr: number }) => b.mcr - a.mcr);
+
+    if (combinedStaffForPronto.length > 0) {
+      lines.push(`\nMCR by Esthetician:`);
+      for (const staff of combinedStaffForPronto) {
+        const emoji = staff.mcr >= 50 ? "🟢" : staff.mcr >= 25 ? "🟡" : "🔴";
+        lines.push(`${emoji} ${staff.name}: ${staff.mcr}% (${staff.memberships}/${staff.newClients})`);
+      }
+    }
+
+    // Membership Churn
+    if (yesterdayChurn.length > 0) {
+      lines.push(`\n📉 YESTERDAY'S CHURN`);
+      for (const c of yesterdayChurn) {
+        const shortLoc = Object.entries(LOCATION_NAME_MAP).find(([_, bq]) => bq === c.location)?.[0] || c.location;
+        lines.push(`• ${shortLoc} | ${c.client} | ${c.membership} | ${c.months} mo | ${c.reason || "No reason"}`);
+      }
+    }
+
+    // Early Churn by Esthetician
+    if (earlyChurnByStaff.length > 0) {
+      lines.push(`\n⚠️ EARLY CHURN BY ESTHETICIAN (MTD)`);
+      for (const e of earlyChurnByStaff) {
+        const shortLoc = Object.entries(LOCATION_NAME_MAP).find(([_, bq]) => bq === e.location)?.[0] || e.location;
+        lines.push(`• ${e.staff} (${shortLoc}): ${e.early_churns} early | avg ${e.avg_tenure} mo`);
+      }
+    }
+
+    // Missed Expectations
+    if (missedExpectations.length > 0) {
+      lines.push(`\n🚨 MISSED EXPECTATIONS`);
+      for (const m of missedExpectations) {
+        const shortLoc = Object.entries(LOCATION_NAME_MAP).find(([_, bq]) => bq === m.location)?.[0] || m.location;
+        const dateStr = m.date?.value || m.date;
+        lines.push(`• ${dateStr} | ${shortLoc} | ${m.client} | ${m.months} mo | Staff: ${m.last_staff || "Unknown"}`);
+      }
+    }
+
+    // Long-Tenure Losses
+    if (longTenureLosses.length > 0) {
+      lines.push(`\n💔 LONG-TENURE LOSSES (6+ mo)`);
+      for (const l of longTenureLosses) {
+        const shortLoc = Object.entries(LOCATION_NAME_MAP).find(([_, bq]) => bq === l.location)?.[0] || l.location;
+        const ltvStr = l.ltv ? `$${Number(l.ltv).toLocaleString()}` : "$0";
+        lines.push(`• ${shortLoc} | ${l.client} | ${ltvStr} LTV | ${l.months} mo | ${l.reason || "No reason"}`);
+      }
+    }
+
+    const summary = lines.join("\n");
 
     try {
       await sendProntoMessage({
