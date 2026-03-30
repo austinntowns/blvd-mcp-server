@@ -976,6 +976,16 @@ export function analyzeBTBBlocks(
     }
   }
 
+  // Helper: check if ANY existing block (BTB, DNB, lunch, personal, etc.)
+  // overlaps a proposed time range for this staff
+  const anyBlockOverlaps = (proposedStartMs: number, proposedEndMs: number): boolean => {
+    return staffTimeblocks.some(tb => {
+      const tbStart = new Date(tb.startAt).getTime();
+      const tbEnd = new Date(tb.endAt).getTime();
+      return proposedStartMs < tbEnd && proposedEndMs > tbStart;
+    });
+  };
+
   // LOW UTILIZATION: Consider adding BTB blocks
   if (utilizationPercent < config.utilizationThreshold) {
     // Only add if shift is long enough (4 hours minimum)
@@ -985,23 +995,27 @@ export function analyzeBTBBlocks(
     }
 
     // Check if we should add start BTB
-    // No existing start block AND (no appointments OR first appointment is >= emptyWindowMinutes from shift start)
+    // No existing block of ANY type AND (no appointments OR first appointment is >= emptyWindowMinutes from shift start)
     if (!startBlock) {
+      const proposedEndMs = shiftStart + config.btbDurationMinutes * 60 * 1000;
+      const noBlockConflict = !anyBlockOverlaps(shiftStart, proposedEndMs);
       const firstAptFarEnough = shiftAppointments.length === 0 ||
         minutesToFirstAppointment! >= config.emptyWindowMinutes;
 
-      if (firstAptFarEnough) {
+      if (noBlockConflict && firstAptFarEnough) {
         result.startBlockShouldAdd = true;
       }
     }
 
     // Check if we should add end BTB
-    // No existing end block AND (no appointments OR last appointment ends >= emptyWindowMinutes before shift end)
+    // No existing block of ANY type AND (no appointments OR last appointment ends >= emptyWindowMinutes before shift end)
     if (!endBlock) {
+      const proposedStartMs = shiftEnd - config.btbDurationMinutes * 60 * 1000;
+      const noBlockConflict = !anyBlockOverlaps(proposedStartMs, shiftEnd);
       const lastAptFarEnough = shiftAppointments.length === 0 ||
         minutesAfterLastAppointment! >= config.emptyWindowMinutes;
 
-      if (lastAptFarEnough) {
+      if (noBlockConflict && lastAptFarEnough) {
         result.endBlockShouldAdd = true;
       }
     }
@@ -1010,12 +1024,14 @@ export function analyzeBTBBlocks(
   // AUTO-ADD RULE: Add short BTB when there's enough space (regardless of utilization)
   // This triggers via webhook when appointments are cancelled/moved
   if (!startBlock && minutesToFirstAppointment !== undefined) {
-    if (minutesToFirstAppointment >= config.autoAddGapMinutes) {
+    const proposedEndMs = shiftStart + config.btbDurationMinutes * 60 * 1000;
+    if (minutesToFirstAppointment >= config.autoAddGapMinutes && !anyBlockOverlaps(shiftStart, proposedEndMs)) {
       result.startAutoAdd = true;
     }
   }
   if (!endBlock && minutesAfterLastAppointment !== undefined) {
-    if (minutesAfterLastAppointment >= config.autoAddGapMinutes) {
+    const proposedStartMs = shiftEnd - config.btbDurationMinutes * 60 * 1000;
+    if (minutesAfterLastAppointment >= config.autoAddGapMinutes && !anyBlockOverlaps(proposedStartMs, shiftEnd)) {
       result.endAutoAdd = true;
     }
   }
