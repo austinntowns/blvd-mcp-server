@@ -22,7 +22,7 @@ export async function sendProntoMessage(opts: SendMessageOptions): Promise<void>
       Authorization: `Bearer ${token}`,
       "Content-Type": "application/json",
     },
-    body: JSON.stringify({ message }),
+    body: JSON.stringify({ text: message }),
   });
 
   if (!res.ok) {

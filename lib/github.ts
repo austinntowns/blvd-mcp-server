@@ -19,7 +19,8 @@ interface PushFileOptions {
  */
 export async function pushFileToGitHub(opts: PushFileOptions): Promise<void> {
   const { repo, path: filePath, content, message, token } = opts;
-  const url = `${GITHUB_API}/repos/${repo}/contents/${encodeURIComponent(filePath)}`;
+  const encodedPath = filePath.split("/").map(encodeURIComponent).join("/");
+  const url = `${GITHUB_API}/repos/${repo}/contents/${encodedPath}`;
   const headers = {
     Authorization: `Bearer ${token}`,
     Accept: "application/vnd.github.v3+json",
