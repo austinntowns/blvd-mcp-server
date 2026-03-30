@@ -1,0 +1,29 @@
+{
+  "rules": [
+    {
+      "id": "r1",
+      "minGap": 120,
+      "maxGap": null,
+      "btbDuration": 60,
+      "label": "Large gap",
+      "enabled": true
+    },
+    {
+      "id": "r2",
+      "minGap": 90,
+      "maxGap": 119,
+      "btbDuration": 30,
+      "label": "Medium gap",
+      "enabled": true
+    },
+    {
+      "id": "r3",
+      "minGap": 60,
+      "maxGap": 89,
+      "btbDuration": 15,
+      "label": "Small gap",
+      "enabled": true
+    }
+  ],
+  "updatedAt": "2026-03-30T02:23:37.686Z"
+}

@@ -944,35 +944,35 @@ export function analyzeBTBBlocks(
     lastAppointmentEnd: shiftAppointments[shiftAppointments.length - 1]?.endAt,
   };
 
-  // HIGH UTILIZATION: Consider removing BTB blocks
-  if (utilizationPercent >= config.utilizationThreshold) {
-    // Check start block for removal
-    if (startBlock && shiftAppointments.length > 0) {
-      const blockEnd = new Date(startBlock.endAt).getTime();
-      const firstAptStart = new Date(shiftAppointments[0].startAt).getTime();
-      const gapMinutes = (firstAptStart - blockEnd) / (1000 * 60);
+  // REMOVE BTB blocks when appointments are close — regardless of utilization.
+  // A BTB that was placed when the shift was empty should be removed once a
+  // nearby appointment is booked, even if utilization is still low.
+  if (startBlock && shiftAppointments.length > 0) {
+    const blockEnd = new Date(startBlock.endAt).getTime();
+    const firstAptStart = new Date(shiftAppointments[0].startAt).getTime();
+    const gapMinutes = (firstAptStart - blockEnd) / (1000 * 60);
 
-      result.startGapMinutes = Math.round(gapMinutes);
+    result.startGapMinutes = Math.round(gapMinutes);
 
-      // Remove if gap is less than threshold
-      if (gapMinutes < config.minGapMinutes && gapMinutes >= 0) {
-        result.startBlockShouldRemove = true;
-      }
+    // Remove if appointment is within minGapMinutes of the block end,
+    // OR if appointment overlaps/precedes the block
+    if (gapMinutes < config.minGapMinutes) {
+      result.startBlockShouldRemove = true;
     }
+  }
 
-    // Check end block for removal
-    if (endBlock && shiftAppointments.length > 0) {
-      const blockStart = new Date(endBlock.startAt).getTime();
-      const lastApt = shiftAppointments[shiftAppointments.length - 1];
-      const lastAptEnd = new Date(lastApt.endAt).getTime();
-      const gapMinutes = (blockStart - lastAptEnd) / (1000 * 60);
+  if (endBlock && shiftAppointments.length > 0) {
+    const blockStart = new Date(endBlock.startAt).getTime();
+    const lastApt = shiftAppointments[shiftAppointments.length - 1];
+    const lastAptEnd = new Date(lastApt.endAt).getTime();
+    const gapMinutes = (blockStart - lastAptEnd) / (1000 * 60);
 
-      result.endGapMinutes = Math.round(gapMinutes);
+    result.endGapMinutes = Math.round(gapMinutes);
 
-      // Remove if gap is less than threshold
-      if (gapMinutes < config.minGapMinutes && gapMinutes >= 0) {
-        result.endBlockShouldRemove = true;
-      }
+    // Remove if appointment is within minGapMinutes of the block start,
+    // OR if appointment overlaps/extends past the block
+    if (gapMinutes < config.minGapMinutes) {
+      result.endBlockShouldRemove = true;
     }
   }
 
