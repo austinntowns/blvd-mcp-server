@@ -7,12 +7,25 @@ import { fileURLToPath } from "url";
 import os from "os";
 import { BigQuery } from "@google-cloud/bigquery";
 import { getAdPerformance, type PortfolioAdSummary } from "../lib/bigquery";
+import { pushFileToGitHub } from "../lib/github";
+import { sendProntoMessage } from "../lib/pronto";
 
 const __filename = fileURLToPath(import.meta.url);
 const __dirname = path.dirname(__filename);
 
-// Obsidian output path
+// --- Google Cloud credentials bootstrap (for Railway / CI) ---
+// When running outside GCP, provide the service account JSON as an env var.
+// The BigQuery SDK reads GOOGLE_APPLICATION_CREDENTIALS (path to a file).
+if (process.env.GOOGLE_APPLICATION_CREDENTIALS_JSON && !process.env.GOOGLE_APPLICATION_CREDENTIALS) {
+  const tmpPath = path.join(os.tmpdir(), "gcp-sa-key.json");
+  fs.writeFileSync(tmpPath, process.env.GOOGLE_APPLICATION_CREDENTIALS_JSON);
+  process.env.GOOGLE_APPLICATION_CREDENTIALS = tmpPath;
+}
+
+// --- Output mode detection ---
+const USE_GITHUB = !!(process.env.GITHUB_TOKEN && process.env.OBSIDIAN_REPO);
 const OBSIDIAN_PATH = path.join(os.homedir(), "Obsidian Vaults/Austin's Brain/Hello Sugar/Daily Briefing");
+const OBSIDIAN_REPO_PATH = "Austin's Brain/Hello Sugar/Daily Briefing"; // path inside the GitHub repo
 
 // BigQuery client
 const bigquery = new BigQuery({ projectId: "even-affinity-388602" });
@@ -1421,16 +1434,59 @@ async function generateBrief(targetDateStr?: string) {
     console.log(`  • ${rec}`);
   }
 
-  // Save to Obsidian
-  try {
-    const obsidianFile = path.join(OBSIDIAN_PATH, `${todayStr}.md`);
-    if (!fs.existsSync(OBSIDIAN_PATH)) {
-      fs.mkdirSync(OBSIDIAN_PATH, { recursive: true });
+  // Save to Obsidian — via GitHub API (Railway) or local filesystem (Mac)
+  if (USE_GITHUB) {
+    try {
+      await pushFileToGitHub({
+        repo: process.env.OBSIDIAN_REPO!,
+        path: `${OBSIDIAN_REPO_PATH}/${todayStr}.md`,
+        content,
+        message: `daily brief ${todayStr}`,
+        token: process.env.GITHUB_TOKEN!,
+      });
+      console.log(`\n✅ Pushed to GitHub: ${process.env.OBSIDIAN_REPO}/${OBSIDIAN_REPO_PATH}/${todayStr}.md`);
+    } catch (err: unknown) {
+      const msg = err instanceof Error ? err.message : String(err);
+      console.error(`\n❌ GitHub push failed: ${msg}`);
     }
-    fs.writeFileSync(obsidianFile, content);
-    console.log(`\n✅ Saved to Obsidian: ${obsidianFile}`);
-  } catch (err: any) {
-    console.error(`\n❌ Could not save to Obsidian: ${err.message}`);
+  } else {
+    try {
+      const obsidianFile = path.join(OBSIDIAN_PATH, `${todayStr}.md`);
+      if (!fs.existsSync(OBSIDIAN_PATH)) {
+        fs.mkdirSync(OBSIDIAN_PATH, { recursive: true });
+      }
+      fs.writeFileSync(obsidianFile, content);
+      console.log(`\n✅ Saved to Obsidian: ${obsidianFile}`);
+    } catch (err: unknown) {
+      const msg = err instanceof Error ? err.message : String(err);
+      console.error(`\n❌ Could not save to Obsidian: ${msg}`);
+    }
+  }
+
+  // Send summary to Pronto (Utah team chat)
+  if (process.env.PRONTO_API_TOKEN && process.env.PRONTO_UTAH_CHAT_ID) {
+    const summary = [
+      `📊 Daily Brief — ${todayStr}`,
+      `Portfolio: ${portfolioYesterday} bookings yesterday (${formatPercent(velocityDelta)} vs avg)`,
+      `New clients: ${newClientsYesterday}`,
+      `Utilization: ${avgPastUtil}% (last 7d) → ${avgFutureUtil}% (next 7d)`,
+      `Capacity alerts: ${alertCount}`,
+      adData ? `Ad spend: $${adData.totalSpend.toFixed(0)} → $${adData.overallCPB.toFixed(2)} CPB` : null,
+      `\nTop recommendations:`,
+      ...recommendations.slice(0, 3).map(r => `• ${r}`),
+    ].filter(Boolean).join("\n");
+
+    try {
+      await sendProntoMessage({
+        chatId: process.env.PRONTO_UTAH_CHAT_ID,
+        message: summary,
+        token: process.env.PRONTO_API_TOKEN,
+      });
+      console.log(`\n✅ Sent summary to Pronto`);
+    } catch (err: unknown) {
+      const msg = err instanceof Error ? err.message : String(err);
+      console.error(`\n❌ Pronto send failed: ${msg}`);
+    }
   }
 }
 
