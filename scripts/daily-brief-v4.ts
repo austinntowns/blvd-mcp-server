@@ -7,25 +7,64 @@ import { fileURLToPath } from "url";
 import os from "os";
 import { BigQuery } from "@google-cloud/bigquery";
 import { getAdPerformance, type PortfolioAdSummary } from "../lib/bigquery";
-import { pushFileToGitHub } from "../lib/github";
-import { sendProntoMessage } from "../lib/pronto";
+import { getAppointments, getShifts, getStaff } from "../lib/boulevard.js";
 
 const __filename = fileURLToPath(import.meta.url);
 const __dirname = path.dirname(__filename);
 
-// --- Google Cloud credentials bootstrap (for Railway / CI) ---
-// When running outside GCP, provide the service account JSON as an env var.
-// The BigQuery SDK reads GOOGLE_APPLICATION_CREDENTIALS (path to a file).
+// Bootstrap Google Cloud credentials from env var (for Railway)
 if (process.env.GOOGLE_APPLICATION_CREDENTIALS_JSON && !process.env.GOOGLE_APPLICATION_CREDENTIALS) {
-  const tmpPath = path.join(os.tmpdir(), "gcp-sa-key.json");
+  const tmpPath = path.join(os.tmpdir(), "gcp-credentials.json");
   fs.writeFileSync(tmpPath, process.env.GOOGLE_APPLICATION_CREDENTIALS_JSON);
   process.env.GOOGLE_APPLICATION_CREDENTIALS = tmpPath;
 }
 
-// --- Output mode detection ---
-const USE_GITHUB = !!(process.env.GITHUB_TOKEN && process.env.OBSIDIAN_REPO);
+// Obsidian output — local path or GitHub API
 const OBSIDIAN_PATH = path.join(os.homedir(), "Obsidian Vaults/Austin's Brain/Hello Sugar/Daily Briefing");
-const OBSIDIAN_REPO_PATH = "Austin's Brain/Hello Sugar/Daily Briefing"; // path inside the GitHub repo
+const GITHUB_TOKEN = process.env.GITHUB_TOKEN;
+const OBSIDIAN_REPO = process.env.OBSIDIAN_REPO; // e.g. "austintowns/obsidian-vault"
+const OBSIDIAN_BRANCH = process.env.OBSIDIAN_BRANCH || "main";
+const OBSIDIAN_BASE_PATH = "Austin's Brain/Hello Sugar"; // path prefix inside the repo
+
+async function githubPutFile(filePath: string, content: string): Promise<void> {
+  const encodedPath = filePath.split("/").map(encodeURIComponent).join("/");
+  const url = `https://api.github.com/repos/${OBSIDIAN_REPO}/contents/${encodedPath}`;
+  // Check if file exists to get its sha (needed for updates)
+  let sha: string | undefined;
+  const getRes = await fetch(url, {
+    headers: { Authorization: `Bearer ${GITHUB_TOKEN}`, Accept: "application/vnd.github.v3+json" },
+  });
+  if (getRes.ok) {
+    const data = await getRes.json() as { sha: string };
+    sha = data.sha;
+  }
+  const body: Record<string, string> = {
+    message: `Daily brief update: ${filePath}`,
+    content: Buffer.from(content).toString("base64"),
+    branch: OBSIDIAN_BRANCH,
+  };
+  if (sha) body.sha = sha;
+  const putRes = await fetch(url, {
+    method: "PUT",
+    headers: { Authorization: `Bearer ${GITHUB_TOKEN}`, "Content-Type": "application/json" },
+    body: JSON.stringify(body),
+  });
+  if (!putRes.ok) {
+    const err = await putRes.text();
+    throw new Error(`GitHub API error (${putRes.status}): ${err}`);
+  }
+}
+
+async function githubGetFile(filePath: string): Promise<string | null> {
+  const encodedPath = filePath.split("/").map(encodeURIComponent).join("/");
+  const url = `https://api.github.com/repos/${OBSIDIAN_REPO}/contents/${encodedPath}?ref=${OBSIDIAN_BRANCH}`;
+  const res = await fetch(url, {
+    headers: { Authorization: `Bearer ${GITHUB_TOKEN}`, Accept: "application/vnd.github.v3+json" },
+  });
+  if (!res.ok) return null;
+  const data = await res.json() as { content: string };
+  return Buffer.from(data.content, "base64").toString("utf-8");
+}
 
 // BigQuery client
 const bigquery = new BigQuery({ projectId: "even-affinity-388602" });
@@ -48,6 +87,74 @@ function generateAuthHeader(): string {
 const blvdClient = new GraphQLClient(BLVD_API_URL, {
   headers: { Authorization: generateAuthHeader() }
 });
+
+// Pronto integration
+const PRONTO_API_TOKEN = process.env.PRONTO_API_TOKEN;
+const PRONTO_UTAH_CHAT_ID = process.env.PRONTO_UTAH_CHAT_ID || "5343834";
+
+async function postToPronto(message: string): Promise<void> {
+  if (!PRONTO_API_TOKEN) {
+    console.log("  ⚠ PRONTO_API_TOKEN not set, skipping Pronto post");
+    return;
+  }
+  const response = await fetch(`https://api.pronto.io/api/chats/${PRONTO_UTAH_CHAT_ID}/messages`, {
+    method: "POST",
+    headers: {
+      Authorization: `Bearer ${PRONTO_API_TOKEN}`,
+      "Content-Type": "application/json",
+      Accept: "application/json",
+    },
+    body: JSON.stringify({ text: message }),
+  });
+  if (!response.ok) {
+    const errorText = await response.text();
+    throw new Error(`Pronto API error (${response.status}): ${errorText}`);
+  }
+}
+
+// Retention offer tiers
+interface RetentionOffer {
+  tier: number;
+  monthlyLtv: number;
+  options: string[];
+}
+
+function getRetentionOffer(ltv: number, months: number, services: { hasBrazilian: boolean; hasUnderarms: boolean; hasBrows: boolean }): RetentionOffer {
+  const monthlyLtv = months > 0 ? ltv / months : 0;
+
+  if (monthlyLtv < 45 || ltv < 330) {
+    return { tier: 3, monthlyLtv, options: [] };
+  }
+
+  if (monthlyLtv >= 100 && ltv >= 600) {
+    const options: string[] = [];
+    if (services.hasBrazilian && !services.hasUnderarms && !services.hasBrows) {
+      options.push("Free Underarms OR Brows 3mo");
+      options.push("Free Laser Combo (2 Med + UA) — $120 value");
+      options.push("10% off next appointment*");
+    } else if (services.hasBrazilian && services.hasUnderarms && !services.hasBrows) {
+      options.push("Free Underarms 3mo");
+      options.push("Free Brows 3mo");
+      options.push("10% off next appointment*");
+    } else if (services.hasBrazilian && services.hasUnderarms && services.hasBrows) {
+      options.push("Free Underarms 3mo");
+      options.push("Free Brows 3mo");
+      options.push("Free Laser Combo (2 Med + UA) — $120 value");
+      options.push("10% off next appointment*");
+    } else {
+      options.push("Free Underarms 3mo");
+      options.push("10% off next appointment*");
+      options.push("Free Laser Medium Combo — $120 value");
+    }
+    return { tier: 1, monthlyLtv, options };
+  }
+
+  return {
+    tier: 2,
+    monthlyLtv,
+    options: ["Free Underarms OR Brows 3mo", "Free Laser on any one area"]
+  };
+}
 
 // Load config
 const configPath = path.join(__dirname, "../config/utah-locations.json");
@@ -111,6 +218,8 @@ interface LocationData {
   cashCollectedYesterday: number;
   capacityAlerts: { staff: string; day: string; bucket: string; util: number }[];
   highUtilShifts: { staff: string; day: string; bucket: string; util: number }[];
+  futureDailyUtil: DayUtilization[];
+  pastDailyUtil: DayUtilization[];
   // Location-level MCR
   locationMcr: { newClients: number; memberships: number; mcr: number };
   // Staff-level MCR
@@ -420,7 +529,10 @@ async function fetchBQData(targetDate: string) {
         ORDER BY c._COL_0 DESC
       `
     }),
-    // Long-tenure losses (6+ months, last 30 days) - excludes clients with future appointments
+    // Long-tenure losses (6+ months, last 30 days)
+    // - excludes clients with future appointments
+    // - excludes laser converts (reason mentions laser AND has recent laser booking)
+    // - includes last appointment date and service history for retention offers
     bigquery.query({
       query: `
         WITH active_clients AS (
@@ -440,6 +552,15 @@ async function fetchBQData(targetDate: string) {
           WHERE _COL_1 IS NOT NULL
           GROUP BY 1
         ),
+        last_appt AS (
+          SELECT
+            CLIENT_ID as client_id,
+            MAX(APPT_SCHED_DATE_CLEANED) as last_appt_date
+          FROM \`${DATASET}.tbl_adhoc_all_bookings_partitioned\`
+          WHERE APPT_SCHED_DATE_CLEANED < ${TARGET_DATE}
+            AND CANCELLED_DATE IS NULL
+          GROUP BY 1
+        ),
         ranked_churns AS (
           SELECT
             c._COL_10 as client_id,
@@ -452,11 +573,13 @@ async function fetchBQData(targetDate: string) {
             c._COL_28 as reason,
             c._COL_32 as feedback,
             COALESCE(cl.total_ltv, 0) as ltv,
+            la.last_appt_date,
             ROW_NUMBER() OVER (PARTITION BY c._COL_10 ORDER BY CAST(c._COL_4 AS INT64) DESC) as rn
           FROM \`${DATASET}.tbl_non_active_membership_with_response\` c
           LEFT JOIN active_clients ac ON c._COL_10 = ac.CLIENT_ID
           LEFT JOIN clients_with_future_appts fa ON c._COL_10 = fa.CLIENT_ID
           LEFT JOIN client_ltv cl ON c._COL_10 = cl.client_id
+          LEFT JOIN last_appt la ON c._COL_10 = la.client_id
           WHERE c._COL_14 IN (${OWNED_LOCATIONS_SQL})
             AND c._COL_5 = 'CANCELLED'
             AND CAST(c._COL_4 AS INT64) >= 6
@@ -464,7 +587,7 @@ async function fetchBQData(targetDate: string) {
             AND ac.CLIENT_ID IS NULL
             AND fa.CLIENT_ID IS NULL
         )
-        SELECT client_id, date, location, client, email, membership, months, reason, feedback, ltv
+        SELECT client_id, date, location, client, email, membership, months, reason, feedback, ltv, last_appt_date
         FROM ranked_churns
         WHERE rn = 1
         ORDER BY ltv DESC
@@ -659,148 +782,201 @@ async function fetchDailyCash(locationId: string, targetDate: string): Promise<n
 }
 
 // ═══════════════════════════════════════════════════════════════════════════
-// UTILIZATION CALCULATION (with blocks)
+// UTILIZATION CALCULATION
+// Boulevard formula: Hours Booked / (Hours Scheduled - Business Blocked Hours)
+// - Uses library getShifts() which already excludes null staffId (laser resources)
+//   and correctly expands recurring templates with recurrence date checks
+// - BTB blocks are not counted as blocked time (they represent unfilled capacity)
 // ═══════════════════════════════════════════════════════════════════════════
 
+interface BlvdAppointment {
+  startAt: string;
+  endAt: string;
+  cancelled: boolean;
+  state: string;
+  appointmentServices?: { staff?: { id: string; name: string } }[];
+}
+
+interface BucketData {
+  scheduledMin: number;
+  blockedMin: number;
+  bookedMin: number;
+}
+
+interface DayUtilization {
+  dateStr: string;       // YYYY-MM-DD
+  dayName: string;       // Mon, Tue, etc.
+  scheduledMin: number;
+  blockedMin: number;
+  bookedMin: number;
+  utilization: number;   // percentage
+  am: BucketData & { utilization: number };  // 8am-2pm
+  pm: BucketData & { utilization: number };  // 2pm-8pm
+}
+
+function toMountainDateStr(d: Date): string {
+  return d.toLocaleDateString("en-CA", { timeZone: "America/Denver" });
+}
+
 function calculateUtilization(
-  shifts: any[],
+  expandedShifts: { staffId: string; date: string; startAt: string; endAt: string }[],
   blocks: Timeblock[],
-  upcomingAppts: any[],
-  locationBqName: string,
-  periodStart: Date,
-  periodEnd: Date
+  blvdAppts: BlvdAppointment[],
+  periodStartStr: string,
+  periodEndStr: string
 ) {
-  const AM_START = 8, AM_END = 14, PM_START = 14, PM_END = 20;
+  const AM_BOUNDARY = 14; // 2pm: AM = 8am-2pm, PM = 2pm-8pm
 
-  // Build scheduled minutes by staff/day/bucket
-  const bucketData = new Map<string, { staff: string; day: number; bucket: string; scheduledMin: number; bookedMin: number; blockedMin: number }>();
-
-  for (const shift of shifts) {
-    if (!shift.staffId || !shift.available) continue;
-
-    const recStart = shift.recurrenceStart ? new Date(shift.recurrenceStart + "T00:00:00-06:00") : periodStart;
-    const recEnd = shift.recurrenceEnd ? new Date(shift.recurrenceEnd + "T23:59:59-06:00") : periodEnd;
-
-    let d = new Date(periodStart);
-    while (d <= periodEnd) {
-      if (d.getDay() === shift.day && d >= recStart && d <= recEnd) {
-        const [h1, m1] = shift.clockIn.split(":").map(Number);
-        const [h2, m2] = shift.clockOut.split(":").map(Number);
-        const shiftStartHour = h1 + m1/60;
-        const shiftEndHour = h2 + m2/60;
-
-        for (const bucket of ["AM", "PM"] as const) {
-          const bStart = bucket === "AM" ? AM_START : PM_START;
-          const bEnd = bucket === "AM" ? AM_END : PM_END;
-
-          if (shiftStartHour < bEnd && shiftEndHour > bStart) {
-            const overlapStart = Math.max(bStart, shiftStartHour);
-            const overlapEnd = Math.min(bEnd, shiftEndHour);
-            const scheduledMin = (overlapEnd - overlapStart) * 60;
-
-            if (scheduledMin > 0) {
-              const key = `${shift.staffId}|${shift.day}|${bucket}`;
-              if (!bucketData.has(key)) {
-                bucketData.set(key, { staff: shift.staffId, day: shift.day, bucket, scheduledMin: 0, bookedMin: 0, blockedMin: 0 });
-              }
-              bucketData.get(key)!.scheduledMin += scheduledMin;
-            }
-          }
-        }
-      }
-      d.setDate(d.getDate() + 1);
-    }
+  // Collect valid staffIds from expanded shifts
+  const validStaffIds = new Set<string>();
+  for (const shift of expandedShifts) {
+    validStaffIds.add(shift.staffId);
   }
 
-  // Subtract blocked time (lunch, DNB) but NOT BTB blocks
-  // BTB blocks represent unfilled capacity, not unavailable time
+  // Build per-date, per-bucket totals
+  const emptyBucket = (): BucketData => ({ scheduledMin: 0, blockedMin: 0, bookedMin: 0 });
+  const dayData = new Map<string, { am: BucketData; pm: BucketData }>();
+
+  // Initialize each date in the period
+  let d = new Date(periodStartStr + "T12:00:00-06:00");
+  const end = new Date(periodEndStr + "T12:00:00-06:00");
+  while (d <= end) {
+    dayData.set(d.toISOString().split("T")[0], { am: emptyBucket(), pm: emptyBucket() });
+    d = new Date(d.getTime() + 24 * 60 * 60 * 1000);
+  }
+
+  // Helper: split a time range into AM/PM minutes
+  function splitIntoBuckets(startHour: number, endHour: number): { amMin: number; pmMin: number } {
+    const amStart = Math.max(8, startHour);
+    const amEnd = Math.min(AM_BOUNDARY, endHour);
+    const pmStart = Math.max(AM_BOUNDARY, startHour);
+    const pmEnd = Math.min(20, endHour);
+    return {
+      amMin: Math.max(0, amEnd - amStart) * 60,
+      pmMin: Math.max(0, pmEnd - pmStart) * 60,
+    };
+  }
+
+  // 1. SCHEDULED: shifts are already expanded by date with recurrence handled
+  for (const shift of expandedShifts) {
+    if (!dayData.has(shift.date)) continue;
+    const [h1, m1] = shift.startAt.split("T")[1].split(":").map(Number);
+    const [h2, m2] = shift.endAt.split("T")[1].split(":").map(Number);
+    const startHour = h1 + m1 / 60;
+    const endHour = h2 + m2 / 60;
+    const { amMin, pmMin } = splitIntoBuckets(startHour, endHour);
+    const day = dayData.get(shift.date)!;
+    day.am.scheduledMin += amMin;
+    day.pm.scheduledMin += pmMin;
+  }
+
+  // 2. BLOCKED: business blocks (not BTB) on real staff
   for (const block of blocks) {
-    if (isBTBBlock(block)) continue; // Skip BTB - keep as bookable
+    if (isBTBBlock(block)) continue;
+    if (block.cancelled) continue;
 
     const blockStart = new Date(block.startAt);
-    const blockEnd = new Date(block.endAt);
-    if (blockStart > periodEnd || blockEnd < periodStart) continue;
+    const dateStr = toMountainDateStr(blockStart);
+    if (!dayData.has(dateStr)) continue;
 
-    const dayOfWeek = blockStart.getDay();
-    const startHour = blockStart.getHours() + blockStart.getMinutes() / 60;
-    const durationMin = block.duration || 0;
-    const bucket = startHour < 14 ? "AM" : "PM";
-
-    // Apply to matching staff bucket
-    // Normalize staff ID (block uses urn:blvd:Staff:xxx, shifts use just xxx)
     const rawStaffId = block.staff?.id;
     if (rawStaffId) {
       const staffId = rawStaffId.replace("urn:blvd:Staff:", "");
-      const key = `${staffId}|${dayOfWeek}|${bucket}`;
-      if (bucketData.has(key)) {
-        bucketData.get(key)!.blockedMin += durationMin;
-      }
+      if (!validStaffIds.has(staffId)) continue;
     }
+
+    // Determine bucket by block start hour in Mountain Time
+    const mstHour = Number(blockStart.toLocaleString("en-US", { timeZone: "America/Denver", hour: "numeric", hour12: false }));
+    const bucket = mstHour < AM_BOUNDARY ? "am" : "pm";
+    dayData.get(dateStr)![bucket].blockedMin += block.duration || 0;
   }
 
-  // Aggregate scheduled/blocked by day/bucket (across all staff)
-  const locationBuckets = new Map<string, { day: number; bucket: string; scheduledMin: number; bookedMin: number; blockedMin: number }>();
+  // 3. BOOKED: Boulevard appointments (actual slot time: endAt - startAt)
+  for (const apt of blvdAppts) {
+    if (apt.cancelled || apt.state === "CANCELLED") continue;
 
-  for (const [_, data] of bucketData) {
-    const key = `${data.day}|${data.bucket}`;
-    if (!locationBuckets.has(key)) {
-      locationBuckets.set(key, { day: data.day, bucket: data.bucket, scheduledMin: 0, bookedMin: 0, blockedMin: 0 });
-    }
-    const lb = locationBuckets.get(key)!;
-    lb.scheduledMin += data.scheduledMin;
-    lb.blockedMin += data.blockedMin;
+    const aptStart = new Date(apt.startAt);
+    const aptEnd = new Date(apt.endAt);
+
+    const aptStaffIds = (apt.appointmentServices || [])
+      .map(s => s.staff?.id?.replace("urn:blvd:Staff:", ""))
+      .filter(Boolean) as string[];
+    const hasRealStaff = aptStaffIds.some(id => validStaffIds.has(id));
+    if (!hasRealStaff) continue;
+
+    const slotMinutes = (aptEnd.getTime() - aptStart.getTime()) / (1000 * 60);
+    if (slotMinutes <= 0) continue;
+
+    const dateStr = toMountainDateStr(aptStart);
+    if (!dayData.has(dateStr)) continue;
+
+    // Split appointment into AM/PM based on actual start/end times
+    const startMst = new Date(aptStart.toLocaleString("en-US", { timeZone: "America/Denver" }));
+    const endMst = new Date(aptEnd.toLocaleString("en-US", { timeZone: "America/Denver" }));
+    const startH = startMst.getHours() + startMst.getMinutes() / 60;
+    const endH = endMst.getHours() + endMst.getMinutes() / 60;
+    const { amMin, pmMin } = splitIntoBuckets(startH, endH);
+    const day = dayData.get(dateStr)!;
+    day.am.bookedMin += amMin;
+    day.pm.bookedMin += pmMin;
   }
 
-  // Add booked minutes from BQ data (aggregated by day/bucket)
-  const locationAppts = upcomingAppts.filter((a: any) => a.location === locationBqName);
-
-  for (const appt of locationAppts) {
-    const dateStr = appt.appt_date?.value || appt.appt_date;
-    const apptDate = new Date(dateStr + "T12:00:00");
-    if (apptDate < periodStart || apptDate > periodEnd) continue;
-
-    const dayOfWeek = apptDate.getDay();
-    const hour = Number(appt.start_hour);
-    const bucket = hour < 14 ? "AM" : "PM";
-    const duration = Number(appt.duration_min) || 0;
-
-    const key = `${dayOfWeek}|${bucket}`;
-    if (locationBuckets.has(key)) {
-      locationBuckets.get(key)!.bookedMin += duration;
-    }
-  }
-
-  // Calculate results
+  // Calculate per-day utilization and totals
   let totalScheduled = 0, totalBooked = 0, totalBlocked = 0;
-  const shiftUtils: { staff: string; day: string; bucket: string; util: number }[] = [];
+  const dailyUtil: DayUtilization[] = [];
 
-  for (const [_, data] of locationBuckets) {
-    const availableMin = Math.max(0, data.scheduledMin - data.blockedMin);
-    const util = availableMin > 0 ? (data.bookedMin / availableMin) * 100 : 0;
-    totalScheduled += data.scheduledMin;
-    totalBooked += data.bookedMin;
-    totalBlocked += data.blockedMin;
+  function calcUtil(b: BucketData): number {
+    const avail = Math.max(0, b.scheduledMin - b.blockedMin);
+    return avail > 0 ? Math.min(100, Math.round((b.bookedMin / avail) * 100)) : 0;
+  }
 
-    if (availableMin > 60) {
-      shiftUtils.push({
-        staff: "", // Location-level, not staff-specific
-        day: dayNames[data.day],
-        bucket: data.bucket === "AM" ? "8AM-2PM" : "2PM-8PM",
-        util: Math.round(util)
-      });
-    }
+  for (const [dateStr, data] of [...dayData.entries()].sort()) {
+    const sched = data.am.scheduledMin + data.pm.scheduledMin;
+    const block = data.am.blockedMin + data.pm.blockedMin;
+    const booked = data.am.bookedMin + data.pm.bookedMin;
+    const available = Math.max(0, sched - block);
+    const util = available > 0 ? Math.min(100, Math.round((booked / available) * 100)) : 0;
+    totalScheduled += sched;
+    totalBooked += booked;
+    totalBlocked += block;
+
+    const dateObj = new Date(dateStr + "T12:00:00-06:00");
+    dailyUtil.push({
+      dateStr,
+      dayName: dayNames[dateObj.getDay()],
+      scheduledMin: sched,
+      blockedMin: block,
+      bookedMin: booked,
+      utilization: util,
+      am: { ...data.am, utilization: calcUtil(data.am) },
+      pm: { ...data.pm, utilization: calcUtil(data.pm) },
+    });
   }
 
   const availableTotal = Math.max(0, totalScheduled - totalBlocked);
   const utilization = availableTotal > 0 ? Math.round((totalBooked / availableTotal) * 100) : 0;
+
+  // Derive capacity alerts and growth opportunities from daily data
+  const alerts = dailyUtil
+    .filter(d => d.utilization >= 75 && (d.scheduledMin - d.blockedMin) > 60)
+    .sort((a, b) => b.utilization - a.utilization)
+    .slice(0, 5)
+    .map(d => ({ staff: "", day: d.dayName, bucket: `${(d.bookedMin/60).toFixed(1)}h/${((d.scheduledMin - d.blockedMin)/60).toFixed(1)}h`, util: d.utilization }));
+
+  const growth = dailyUtil
+    .filter(d => d.utilization >= 50 && d.utilization < 75 && (d.scheduledMin - d.blockedMin) > 60)
+    .sort((a, b) => b.utilization - a.utilization)
+    .slice(0, 5)
+    .map(d => ({ staff: "", day: d.dayName, bucket: `${(d.bookedMin/60).toFixed(1)}h/${((d.scheduledMin - d.blockedMin)/60).toFixed(1)}h`, util: d.utilization }));
 
   return {
     utilization,
     scheduledMinutes: totalScheduled,
     bookedMinutes: totalBooked,
     blockedMinutes: totalBlocked,
-    highUtilShifts: shiftUtils.filter(s => s.util >= 50 && s.util < 75).sort((a, b) => b.util - a.util).slice(0, 5),
-    capacityAlerts: shiftUtils.filter(s => s.util >= 75).sort((a, b) => b.util - a.util).slice(0, 5),
+    dailyUtil,
+    highUtilShifts: growth,
+    capacityAlerts: alerts,
   };
 }
 
@@ -832,7 +1008,16 @@ function getVelocityEmoji(delta: number): string {
 
 async function generateBrief(targetDateStr?: string) {
   // Accept optional date argument (YYYY-MM-DD format) for backfilling
-  const today = targetDateStr ? new Date(targetDateStr + "T12:00:00-06:00") : new Date();
+  let today: Date;
+  if (targetDateStr) {
+    today = new Date(targetDateStr + "T12:00:00-06:00");
+  } else {
+    // Evaluate yesterday in Mountain Time (the brief reviews the prior day)
+    const nowLocal = new Date().toLocaleString("en-CA", { timeZone: "America/Denver", hour12: false });
+    const localDateStr = nowLocal.split(",")[0]; // YYYY-MM-DD
+    const localToday = new Date(localDateStr + "T12:00:00-06:00");
+    today = new Date(localToday.getTime() - 24 * 60 * 60 * 1000);
+  }
   const todayStr = today.toISOString().split("T")[0];
 
   // Date ranges: past 7 days and next 7 days
@@ -868,39 +1053,60 @@ async function generateBrief(targetDateStr?: string) {
   const bqData = await fetchBQData(todayStr);
   console.log(`  ✓ ${bqData.upcomingAppts.length} upcoming, ${bqData.pastAppts.length} past appointments`);
 
-  console.log("Fetching Boulevard shifts & blocks...");
-  // Future period (next 7 days)
-  const futureStart = new Date(todayStr + "T00:00:00-06:00");
-  const futureEnd = new Date(sevenDaysOutStr + "T23:59:59-06:00");
-  // Past period (last 7 days)
-  const pastStart = new Date(sevenDaysAgoStr + "T00:00:00-06:00");
-  const pastEnd = new Date(todayStr + "T00:00:00-06:00");
+  console.log("Fetching Boulevard staff (once)...");
+  // Fetch all staff once to avoid redundant API calls (was called 14x before)
+  const allStaff = await getStaff();
+  const staffMapsByLocation = new Map<string, Map<string, any>>();
+  for (const loc of config.owned) {
+    const normalizedLocId = loc.id.replace("urn:blvd:Location:", "");
+    const locStaff = allStaff.filter((s: any) =>
+      s.locations?.some((l: any) => l.id.replace("urn:blvd:Location:", "") === normalizedLocId)
+    );
+    staffMapsByLocation.set(loc.id, new Map(
+      locStaff.map((s: any) => [s.id.replace("urn:blvd:Staff:", ""), s])
+    ));
+  }
+  console.log(`  ✓ ${allStaff.length} staff members`);
 
-  const blvdPromises = config.owned.map((loc: any) =>
-    Promise.all([
-      fetchShiftsForLocation(loc.id, sevenDaysAgoStr, sevenDaysOutStr), // Full 14-day range for shifts
-      fetchBlocksForLocation(loc.id, sevenDaysAgoStr, sevenDaysOutStr), // Full 14-day range for blocks
-      fetchDailyCash(loc.id, yesterdayStr) // Yesterday's cash
-    ]).then(([shifts, blocks, cashCents]) => ({
+  console.log("Fetching Boulevard shifts, blocks & appointments...");
+  // Period date strings for utilization calculation
+  const futureStartStr = todayStr;
+  const futureEndStr = sevenDaysOutStr;
+  const pastStartStr = sevenDaysAgoStr;
+  const pastEndStr = todayStr;
+
+  // Fetch shifts once per location for the full range, split locally into past/future
+  // Pass pre-loaded staff map to avoid redundant getStaff() calls
+  const blvdPromises = config.owned.map((loc: any) => {
+    const staffMap = staffMapsByLocation.get(loc.id)!;
+    return Promise.all([
+      getShifts(loc.id, sevenDaysAgoStr, sevenDaysOutStr, undefined, staffMap), // ONE call, split locally
+      fetchBlocksForLocation(loc.id, sevenDaysAgoStr, sevenDaysOutStr),
+      fetchDailyCash(loc.id, yesterdayStr),
+      getAppointments(loc.id, sevenDaysAgoStr, sevenDaysOutStr, undefined, 2000),
+    ]).then(([allShifts, blocks, cashCents, appointments]) => ({
       shortName: loc.shortName,
       blvdId: loc.id,
-      shifts,
+      pastShifts: allShifts.filter((s: any) => s.date >= pastStartStr && s.date < pastEndStr),
+      futureShifts: allShifts.filter((s: any) => s.date >= futureStartStr && s.date <= futureEndStr),
       blocks,
-      cashCents
-    }))
-  );
+      cashCents,
+      appointments,
+    }));
+  });
   const allBlvdData = await Promise.all(blvdPromises);
-  const totalShifts = allBlvdData.reduce((sum, l) => sum + l.shifts.length, 0);
+  const totalShifts = allBlvdData.reduce((sum, l) => sum + l.pastShifts.length + l.futureShifts.length, 0);
   const totalBlocks = allBlvdData.reduce((sum, l) => sum + l.blocks.length, 0);
   const totalCash = allBlvdData.reduce((sum, l) => sum + l.cashCents, 0);
-  console.log(`  ✓ ${totalShifts} shifts, ${totalBlocks} blocks, $${(totalCash / 100).toFixed(0)} cash yesterday`);
+  const totalAppts = allBlvdData.reduce((sum, l) => sum + l.appointments.length, 0);
+  console.log(`  ✓ ${totalShifts} shifts, ${totalBlocks} blocks, ${totalAppts} appts, $${(totalCash / 100).toFixed(0)} cash yesterday`);
 
   // Fetch ad data
   console.log("Fetching advertising data...");
   const shortNames = config.owned.map((l: any) => l.shortName);
   let adData: PortfolioAdSummary | null = null;
   try {
-    adData = await getAdPerformance(shortNames, 7);
+    adData = await getAdPerformance(shortNames, 7, todayStr);
     console.log(`  ✓ $${adData.totalSpend.toFixed(0)} total spend`);
   } catch (err) {
     console.log("  ⚠ Could not fetch ad data");
@@ -915,22 +1121,20 @@ async function generateBrief(targetDateStr?: string) {
 
     // Future utilization (next 7 days - forecast)
     const futureUtilData = calculateUtilization(
-      locData.shifts,
+      locData.futureShifts,
       locData.blocks,
-      bqData.upcomingAppts,
-      bqName,
-      futureStart,
-      futureEnd
+      locData.appointments,
+      futureStartStr,
+      futureEndStr
     );
 
     // Past utilization (last 7 days - actual)
     const pastUtilData = calculateUtilization(
-      locData.shifts,
+      locData.pastShifts,
       locData.blocks,
-      bqData.pastAppts,
-      bqName,
-      pastStart,
-      pastEnd
+      locData.appointments,
+      pastStartStr,
+      pastEndStr
     );
 
     const velocity = bqData.bookingVelocity.find((v: any) => v.location === bqName) || {};
@@ -999,6 +1203,8 @@ async function generateBrief(targetDateStr?: string) {
       cashCollectedYesterday: locData.cashCents / 100, // Convert cents to dollars
       capacityAlerts: futureUtilData.capacityAlerts,
       highUtilShifts: futureUtilData.highUtilShifts,
+      futureDailyUtil: futureUtilData.dailyUtil,
+      pastDailyUtil: pastUtilData.dailyUtil,
       locationMcr,
       staffMcr,
       topServices,
@@ -1012,7 +1218,14 @@ async function generateBrief(targetDateStr?: string) {
   const portfolioAvg = locationData.reduce((sum, l) => sum + l.bookings7DayAvg, 0);
   const velocityDelta = portfolioAvg > 0 ? Math.round(((portfolioYesterday - portfolioAvg) / portfolioAvg) * 100) : 0;
   const newClientsYesterday = locationData.reduce((sum, l) => sum + l.newClientsYesterday, 0);
-  const alertCount = locationData.reduce((sum, l) => sum + l.capacityAlerts.length, 0);
+  // Count AM/PM shifts at capacity (≥75%)
+  let alertCount = 0;
+  for (const loc of locationData) {
+    for (const d of loc.futureDailyUtil) {
+      if (d.am.utilization >= 75 && (d.am.scheduledMin - d.am.blockedMin) > 60) alertCount++;
+      if (d.pm.utilization >= 75 && (d.pm.scheduledMin - d.pm.blockedMin) > 60) alertCount++;
+    }
+  }
   const avgPastUtil = Math.round(locationData.reduce((sum, l) => sum + l.pastUtilization, 0) / locationData.length);
   const avgFutureUtil = Math.round(locationData.reduce((sum, l) => sum + l.utilization, 0) / locationData.length);
   const avgUtilTrend = avgFutureUtil - avgPastUtil;
@@ -1098,23 +1311,6 @@ async function generateBrief(targetDateStr?: string) {
   md.push(``);
 
   // ═══════════════════════════════════════════════════════════════════════
-  // CAPACITY ALERTS
-  // ═══════════════════════════════════════════════════════════════════════
-  const allAlerts = locationData.flatMap(l => l.capacityAlerts.map(a => ({ ...a, location: l.shortName })));
-
-  if (allAlerts.length > 0) {
-    md.push(`## 🚨 Capacity Alerts (≥75% Booked)`);
-    md.push(`*${dateRanges.next7Days} — Shifts approaching full, add coverage or open waitlist*`);
-    md.push(``);
-    md.push(`| Location | Day | Time | Utilization |`);
-    md.push(`|----------|-----|------|-------------|`);
-    for (const alert of allAlerts.slice(0, 8)) {
-      md.push(`| ${alert.location} | ${alert.day} | ${alert.bucket} | **${alert.util}%** |`);
-    }
-    md.push(``);
-  }
-
-  // ═══════════════════════════════════════════════════════════════════════
   // BOOKING VELOCITY
   // ═══════════════════════════════════════════════════════════════════════
   md.push(`## 📅 Booking Velocity`);
@@ -1177,45 +1373,172 @@ async function generateBrief(targetDateStr?: string) {
   // ═══════════════════════════════════════════════════════════════════════
   // UTILIZATION COMPARISON (Past 7 Days vs Next 7 Days)
   // ═══════════════════════════════════════════════════════════════════════
-  md.push(`## 🏆 Utilization Comparison`);
-  md.push(`*Last 7d (${dateRanges.last7Days}) vs Next 7d (${dateRanges.next7Days}) — Booked ÷ (scheduled - lunch/DNB)*`);
+  md.push(`## 🏆 Utilization Overview`);
+  md.push(`*Boulevard formula: Hours Booked ÷ (Hours Scheduled - Business Blocked Hours)*`);
   md.push(``);
-  md.push(`| Location | Last 7d | Next 7d | Trend | Prediction |`);
-  md.push(`|----------|---------|---------|-------|------------|`);
+
+  // Weekly summary table
+  md.push(`### Weekly Summary`);
+  md.push(`*Last 7d (${dateRanges.last7Days}) vs Next 7d (${dateRanges.next7Days})*`);
+  md.push(``);
+  md.push(`| Location | Last 7d | Next 7d | Trend |`);
+  md.push(`|----------|---------|---------|-------|`);
 
   for (const loc of locationData) {
     const trendEmoji = loc.utilizationTrend === null ? "—" :
       loc.utilizationTrend > 5 ? "📈" :
       loc.utilizationTrend < -5 ? "📉" : "➡️";
     const trendText = loc.utilizationTrend !== null ? `${loc.utilizationTrend > 0 ? "+" : ""}${loc.utilizationTrend}%` : "—";
-
-    // Prediction based on trend
-    let prediction = "";
-    if (loc.utilizationTrend !== null) {
-      if (loc.utilizationTrend > 10) prediction = "Busy week ahead";
-      else if (loc.utilizationTrend > 0) prediction = "Slight uptick";
-      else if (loc.utilizationTrend < -10) prediction = "Slower week expected";
-      else if (loc.utilizationTrend < 0) prediction = "Slight dip";
-      else prediction = "Steady";
-    }
-
-    md.push(`| ${loc.shortName} | **${loc.pastUtilization}%** | **${loc.utilization}%** | ${trendEmoji} ${trendText} | ${prediction} |`);
+    md.push(`| ${loc.shortName} | **${loc.pastUtilization}%** | **${loc.utilization}%** | ${trendEmoji} ${trendText} |`);
   }
   md.push(``);
 
-  // ═══════════════════════════════════════════════════════════════════════
-  // GROWTH OPPORTUNITIES
-  // ═══════════════════════════════════════════════════════════════════════
-  const allGrowth = locationData.flatMap(l => l.highUtilShifts.map(s => ({ ...s, location: l.shortName })));
+  // Format a utilization cell: "65%" bold if ≥75, normal otherwise, "—" if no shift
+  const fmtUtil = (u: number, sched: number) => {
+    if (sched === 0) return "—";
+    if (u >= 75) return `**${u}%**`;
+    return `${u}%`;
+  };
 
-  if (allGrowth.length > 0) {
-    md.push(`## 📈 Growth Opportunities (50-74% Booked)`);
-    md.push(`*${dateRanges.next7Days} — Shifts becoming constraints, consider adding coverage*`);
+  // Emoji for a single utilization value
+  const utilDot = (u: number, sched: number) => {
+    if (sched === 0) return "—";
+    if (u >= 75) return `🔴${u}`;
+    if (u >= 50) return `🟡${u}`;
+    if (u > 0) return `🟢${u}`;
+    return "0";
+  };
+
+  // Helper: build grid with separate AM/PM rows per location
+  function buildUtilGrid(
+    dates: string[],
+    getDailyUtil: (loc: typeof locationData[0]) => DayUtilization[],
+    getAvg: (loc: typeof locationData[0]) => number
+  ) {
+    const headers = dates.map(ds => {
+      const d = new Date(ds + "T12:00:00-06:00");
+      return `${dayNames[d.getDay()]} ${ds.slice(5)}`;
+    });
+
+    md.push(`| Location | Shift | ${headers.join(" | ")} | Avg |`);
+    md.push(`|----------|-------|${headers.map(() => "---:").join("|")}|---:|`);
+
+    for (const loc of locationData) {
+      const dayMap = new Map(getDailyUtil(loc).map(d => [d.dateStr, d]));
+      const amCells = dates.map(ds => {
+        const d = dayMap.get(ds);
+        if (!d) return "—";
+        return utilDot(d.am.utilization, d.am.scheduledMin);
+      });
+      const pmCells = dates.map(ds => {
+        const d = dayMap.get(ds);
+        if (!d) return "—";
+        return utilDot(d.pm.utilization, d.pm.scheduledMin);
+      });
+      md.push(`| **${loc.shortName}** | 8a-2p | ${amCells.join(" | ")} | **${getAvg(loc)}%** |`);
+      md.push(`| | 2p-8p | ${pmCells.join(" | ")} | |`);
+    }
     md.push(``);
-    md.push(`| Location | Day | Time | Utilization |`);
-    md.push(`|----------|-----|------|-------------|`);
-    for (const shift of allGrowth.slice(0, 6)) {
-      md.push(`| ${shift.location} | ${shift.day} | ${shift.bucket} | ${shift.util}% |`);
+  }
+
+  // ── LAST 7 DAYS ──
+  const pastDates = [...new Set(locationData.flatMap(l =>
+    l.pastDailyUtil.filter(d => d.scheduledMin > 0).map(d => d.dateStr)
+  ))].sort();
+
+  if (pastDates.length > 0) {
+    md.push(`### Last 7 Days (${dateRanges.last7Days})`);
+    md.push(`*🔴 ≥75% 🟡 ≥50% 🟢 <50%*`);
+    md.push(``);
+    buildUtilGrid(pastDates, l => l.pastDailyUtil, l => l.pastUtilization);
+  }
+
+  // ── NEXT 7 DAYS ──
+  const futureDates = [...new Set(locationData.flatMap(l =>
+    l.futureDailyUtil.filter(d => d.scheduledMin > 0).map(d => d.dateStr)
+  ))].sort();
+
+  if (futureDates.length > 0) {
+    md.push(`### Next 7 Days (${dateRanges.next7Days})`);
+    md.push(`*🔴 ≥75% 🟡 ≥50% 🟢 <50%*`);
+    md.push(``);
+    buildUtilGrid(futureDates, l => l.futureDailyUtil, l => l.utilization);
+
+    // Hours detail — collapsible
+    md.push(`<details><summary>Hours breakdown (available / booked per shift)</summary>`);
+    md.push(``);
+    md.push(`| Location | Day | Shift | Avail | Booked |`);
+    md.push(`|----------|-----|-------|-------|--------|`);
+    for (const loc of locationData) {
+      for (const d of loc.futureDailyUtil.filter(dd => dd.scheduledMin > 0)) {
+        const day = `${d.dayName} ${d.dateStr.slice(5)}`;
+        if (d.am.scheduledMin > 0) {
+          const avail = (Math.max(0, d.am.scheduledMin - d.am.blockedMin) / 60).toFixed(1);
+          const booked = (d.am.bookedMin / 60).toFixed(1);
+          md.push(`| ${loc.shortName} | ${day} | 8a-2p | ${avail}h | ${booked}h |`);
+        }
+        if (d.pm.scheduledMin > 0) {
+          const avail = (Math.max(0, d.pm.scheduledMin - d.pm.blockedMin) / 60).toFixed(1);
+          const booked = (d.pm.bookedMin / 60).toFixed(1);
+          md.push(`| ${loc.shortName} | ${day} | 2p-8p | ${avail}h | ${booked}h |`);
+        }
+      }
+    }
+    md.push(``);
+    md.push(`</details>`);
+    md.push(``);
+  }
+
+  // ── SHIFTS NEEDING ATTENTION ──
+  // Collect all AM/PM shifts with notable utilization
+  interface ShiftAlert { location: string; day: string; shift: string; util: number; booked: string; avail: string }
+  const capacityShifts: ShiftAlert[] = [];
+  const growthShifts: ShiftAlert[] = [];
+
+  for (const loc of locationData) {
+    for (const d of loc.futureDailyUtil) {
+      for (const [label, bucket] of [["8a-2p", d.am], ["2p-8p", d.pm]] as const) {
+        const avail = Math.max(0, bucket.scheduledMin - bucket.blockedMin);
+        if (avail <= 60) continue;
+        const entry: ShiftAlert = {
+          location: loc.shortName,
+          day: `${d.dayName} ${d.dateStr.slice(5)}`,
+          shift: label,
+          util: bucket.utilization,
+          booked: `${(bucket.bookedMin / 60).toFixed(1)}h`,
+          avail: `${(avail / 60).toFixed(1)}h`,
+        };
+        if (bucket.utilization >= 75) capacityShifts.push(entry);
+        else if (bucket.utilization >= 50) growthShifts.push(entry);
+      }
+    }
+  }
+
+  if (capacityShifts.length > 0 || growthShifts.length > 0) {
+    md.push(`### Shifts Needing Attention`);
+    md.push(``);
+  }
+
+  if (capacityShifts.length > 0) {
+    capacityShifts.sort((a, b) => b.util - a.util);
+    md.push(`**At Capacity (≥75%) — add coverage or open waitlist**`);
+    md.push(``);
+    md.push(`| Location | Day | Shift | Avail | Booked | Util |`);
+    md.push(`|----------|-----|-------|-------|--------|------|`);
+    for (const s of capacityShifts.slice(0, 10)) {
+      md.push(`| ${s.location} | ${s.day} | ${s.shift} | ${s.avail} | ${s.booked} | **${s.util}%** |`);
+    }
+    md.push(``);
+  }
+
+  if (growthShifts.length > 0) {
+    growthShifts.sort((a, b) => b.util - a.util);
+    md.push(`**Filling Up (50-74%) — watch these, may need coverage soon**`);
+    md.push(``);
+    md.push(`| Location | Day | Shift | Avail | Booked | Util |`);
+    md.push(`|----------|-----|-------|-------|--------|------|`);
+    for (const s of growthShifts.slice(0, 10)) {
+      md.push(`| ${s.location} | ${s.day} | ${s.shift} | ${s.avail} | ${s.booked} | ${s.util}% |`);
     }
     md.push(``);
   }
@@ -1339,6 +1662,8 @@ async function generateBrief(targetDateStr?: string) {
   const earlyChurnByStaff = bqData.earlyChurnByStaff || [];
   const missedExpectations = bqData.missedExpectations || [];
   const longTenureLosses = bqData.longTernureLosses || [];
+  // Populated in the retention section, used for Pronto message
+  const retentionForPronto: { client: string; clientId: string; location: string; ltv: number; email: string; offer: RetentionOffer; reason: string; churnDate: string; lastAppt: string }[] = [];
 
   const BLVD_CLIENT_URL = "https://dashboard.boulevard.io/clients";
 
@@ -1394,21 +1719,90 @@ async function generateBrief(targetDateStr?: string) {
       md.push(``);
     }
 
-    // Long-tenure losses (winback opportunities)
+    // Long-tenure losses (winback opportunities) with retention tiers
     if (longTenureLosses.length > 0) {
-      md.push(`### 💔 Long-Tenure Losses (6+ months)`);
-      md.push(`*Loyal members lost — reach out to win back*`);
-      md.push(``);
-      md.push(`| Date | Location | Client | LTV | Tenure | Reason | Email |`);
-      md.push(`|------|----------|--------|-----|--------|--------|-------|`);
+      // Filter: skip laser converts and clients with last visit > 3 months ago
+      const threeMonthsAgo = new Date(today);
+      threeMonthsAgo.setMonth(threeMonthsAgo.getMonth() - 3);
+      const threeMonthsAgoStr = threeMonthsAgo.toISOString().split("T")[0];
+
+      const laserConverts: any[] = [];
+      const retentionCandidates: any[] = [];
+
       for (const l of longTenureLosses) {
-        const shortLoc = Object.entries(LOCATION_NAME_MAP).find(([_, bq]) => bq === l.location)?.[0] || l.location;
-        const dateStr = l.date?.value || l.date;
-        const clientLink = l.client_id ? `[${l.client}](${BLVD_CLIENT_URL}/${l.client_id})` : l.client;
-        const ltvStr = l.ltv ? `$${Number(l.ltv).toLocaleString()}` : '$0';
-        md.push(`| ${dateStr} | ${shortLoc} | ${clientLink} | **${ltvStr}** | ${l.months} mo | ${l.reason || 'No reason'} | ${l.email} |`);
+        const reasonMentionsLaser = (l.reason || "").toLowerCase().includes("laser") ||
+          (l.feedback || "").toLowerCase().includes("laser");
+
+        // Skip laser converts — reason mentions laser (likely upgraded internally)
+        if (reasonMentionsLaser) {
+          laserConverts.push(l);
+          continue;
+        }
+
+        // Skip clients whose last appointment was over 3 months ago
+        const lastApptDate = l.last_appt_date?.value || l.last_appt_date;
+        if (!lastApptDate || lastApptDate < threeMonthsAgoStr) {
+          continue;
+        }
+
+        retentionCandidates.push(l);
       }
-      md.push(``);
+
+      if (laserConverts.length > 0) {
+        md.push(`### 🔄 Laser Converts (excluded from churn)`);
+        md.push(`*These clients cancelled wax/sugar but upgraded to laser internally*`);
+        md.push(``);
+        for (const l of laserConverts) {
+          const shortLoc = Object.entries(LOCATION_NAME_MAP).find(([_, bq]) => bq === l.location)?.[0] || l.location;
+          const clientLink = l.client_id ? `[${l.client}](${BLVD_CLIENT_URL}/${l.client_id})` : l.client;
+          md.push(`- ${clientLink} (${shortLoc}) — $${Number(l.ltv).toLocaleString()} LTV`);
+        }
+        md.push(``);
+      }
+
+      if (retentionCandidates.length > 0) {
+        md.push(`### 💔 Retention Opportunities (6+ mo tenure, visited within 3 mo)`);
+        md.push(`*Tier 1: $100+/mo & $600+ LTV | Tier 2: $45+/mo & $330+ LTV | Tier 3: no offer*`);
+        md.push(``);
+
+        for (const l of retentionCandidates) {
+          const shortLoc = Object.entries(LOCATION_NAME_MAP).find(([_, bq]) => bq === l.location)?.[0] || l.location;
+          const dateStr = l.date?.value || l.date;
+          const lastAppt = l.last_appt_date?.value || l.last_appt_date;
+          const clientLink = l.client_id ? `[${l.client}](${BLVD_CLIENT_URL}/${l.client_id})` : l.client;
+          const ltvNum = Number(l.ltv) || 0;
+          const monthsNum = Number(l.months) || 1;
+          // Infer service history from membership name (service_history query TBD)
+          const membership = (l.membership || "").toLowerCase();
+          const services = {
+            hasBrazilian: membership.includes("brazilian"),
+            hasUnderarms: membership.includes("underarm"),
+            hasBrows: membership.includes("brow"),
+          };
+          const offer = getRetentionOffer(ltvNum, monthsNum, services);
+
+          md.push(`**${clientLink}** — ${shortLoc} | **$${ltvNum.toLocaleString()} LTV** | $${Math.round(offer.monthlyLtv)}/mo | ${monthsNum} mo | Tier ${offer.tier}`);
+          md.push(`- Cancelled: ${dateStr} | Last visit: ${lastAppt || 'Unknown'} | Reason: ${l.reason || 'No reason'}`);
+          md.push(`- Email: ${l.email}`);
+          if (offer.options.length > 0) {
+            md.push(`- **Offer one of:**`);
+            for (const opt of offer.options) {
+              md.push(`  - ${opt}`);
+            }
+          }
+          md.push(``);
+
+          // Collect for Pronto message
+          if (offer.tier <= 2) {
+            retentionForPronto.push({
+              client: l.client, clientId: l.client_id, location: shortLoc,
+              ltv: ltvNum, email: l.email, offer,
+              reason: l.reason || 'No reason given',
+              churnDate: dateStr, lastAppt: lastAppt || 'Unknown',
+            });
+          }
+        }
+      }
     }
   }
 
@@ -1434,22 +1828,59 @@ async function generateBrief(targetDateStr?: string) {
     console.log(`  • ${rec}`);
   }
 
-  // Save to Obsidian — via GitHub API (Railway) or local filesystem (Mac)
-  if (USE_GITHUB) {
+  // Save to Obsidian (local or GitHub)
+  if (GITHUB_TOKEN && OBSIDIAN_REPO) {
+    // Railway / remote: use GitHub API
     try {
-      await pushFileToGitHub({
-        repo: process.env.OBSIDIAN_REPO!,
-        path: `${OBSIDIAN_REPO_PATH}/${todayStr}.md`,
-        content,
-        message: `daily brief ${todayStr}`,
-        token: process.env.GITHUB_TOKEN!,
-      });
-      console.log(`\n✅ Pushed to GitHub: ${process.env.OBSIDIAN_REPO}/${OBSIDIAN_REPO_PATH}/${todayStr}.md`);
-    } catch (err: unknown) {
-      const msg = err instanceof Error ? err.message : String(err);
-      console.error(`\n❌ GitHub push failed: ${msg}`);
+      await githubPutFile(`${OBSIDIAN_BASE_PATH}/Daily Briefing/${todayStr}.md`, content);
+      console.log(`\n✅ Pushed to GitHub: ${OBSIDIAN_REPO} — Daily Briefing/${todayStr}.md`);
+    } catch (err: any) {
+      console.error(`\n❌ Could not push to GitHub: ${err.message}`);
+    }
+
+    // Append ≥60% shifts to Capacity Log via GitHub
+    try {
+      const capacityPath = `${OBSIDIAN_BASE_PATH}/Capacity Log.md`;
+      let log = await githubGetFile(capacityPath);
+      if (log) {
+        let added = 0;
+        const locations = ["Bountiful", "Farmington", "Heber City", "Ogden", "Riverton", "Sugar House", "West Valley"];
+        const fullDayNames = ["Sunday", "Monday", "Tuesday", "Wednesday", "Thursday", "Friday", "Saturday"];
+
+        for (const locName of locations) {
+          const loc = locationData.find(l => l.shortName === locName);
+          if (!loc) continue;
+          for (const d of loc.pastDailyUtil) {
+            for (const [label, bucket] of [["8a-2p", d.am], ["2p-8p", d.pm]] as const) {
+              const avail = Math.max(0, bucket.scheduledMin - bucket.blockedMin);
+              if (bucket.utilization < 60 || avail <= 60) continue;
+              const entry = `| ${d.dateStr} | ${label} | ${bucket.utilization}% | ${(avail / 60).toFixed(1)}h | ${(bucket.bookedMin / 60).toFixed(1)}h |`;
+              if (log.includes(entry)) continue;
+              const locHeading = `## ${locName}`;
+              const locIdx = log.indexOf(locHeading);
+              if (locIdx === -1) continue;
+              const dayHeading = `### ${fullDayNames[new Date(d.dateStr + "T12:00:00-06:00").getDay()]}`;
+              const dayIdx = log.indexOf(dayHeading, locIdx);
+              if (dayIdx === -1) continue;
+              const afterDay = log.indexOf("\n", dayIdx) + 1;
+              let tableEnd = log.indexOf("\n\n", afterDay);
+              if (tableEnd === -1) tableEnd = log.length;
+              log = log.slice(0, tableEnd) + "\n" + entry + log.slice(tableEnd);
+              added++;
+            }
+          }
+        }
+
+        if (added > 0) {
+          await githubPutFile(capacityPath, log);
+          console.log(`📋 Logged ${added} capacity event${added > 1 ? "s" : ""} to Capacity Log (GitHub)`);
+        }
+      }
+    } catch (err: any) {
+      console.error(`⚠ Could not update Capacity Log (GitHub): ${err.message}`);
     }
   } else {
+    // Local: write to filesystem
     try {
       const obsidianFile = path.join(OBSIDIAN_PATH, `${todayStr}.md`);
       if (!fs.existsSync(OBSIDIAN_PATH)) {
@@ -1457,162 +1888,123 @@ async function generateBrief(targetDateStr?: string) {
       }
       fs.writeFileSync(obsidianFile, content);
       console.log(`\n✅ Saved to Obsidian: ${obsidianFile}`);
-    } catch (err: unknown) {
-      const msg = err instanceof Error ? err.message : String(err);
-      console.error(`\n❌ Could not save to Obsidian: ${msg}`);
+    } catch (err: any) {
+      console.error(`\n❌ Could not save to Obsidian: ${err.message}`);
+    }
+
+    // Append ≥60% shifts from past data to Capacity Log
+    const CAPACITY_LOG = path.join(os.homedir(), "Obsidian Vaults/Austin's Brain/Hello Sugar/Capacity Log.md");
+    try {
+      if (fs.existsSync(CAPACITY_LOG)) {
+        let log = fs.readFileSync(CAPACITY_LOG, "utf-8");
+        let added = 0;
+        const locations = ["Bountiful", "Farmington", "Heber City", "Ogden", "Riverton", "Sugar House", "West Valley"];
+        const fullDayNames = ["Sunday", "Monday", "Tuesday", "Wednesday", "Thursday", "Friday", "Saturday"];
+
+        for (const locName of locations) {
+          const loc = locationData.find(l => l.shortName === locName);
+          if (!loc) continue;
+          for (const d of loc.pastDailyUtil) {
+            for (const [label, bucket] of [["8a-2p", d.am], ["2p-8p", d.pm]] as const) {
+              const avail = Math.max(0, bucket.scheduledMin - bucket.blockedMin);
+              if (bucket.utilization < 60 || avail <= 60) continue;
+              const entry = `| ${d.dateStr} | ${label} | ${bucket.utilization}% | ${(avail / 60).toFixed(1)}h | ${(bucket.bookedMin / 60).toFixed(1)}h |`;
+              if (log.includes(entry)) continue;
+              const locHeading = `## ${locName}`;
+              const locIdx = log.indexOf(locHeading);
+              if (locIdx === -1) continue;
+              const dayHeading = `### ${fullDayNames[new Date(d.dateStr + "T12:00:00-06:00").getDay()]}`;
+              const dayIdx = log.indexOf(dayHeading, locIdx);
+              if (dayIdx === -1) continue;
+              const afterDay = log.indexOf("\n", dayIdx) + 1;
+              let tableEnd = log.indexOf("\n\n", afterDay);
+              if (tableEnd === -1) tableEnd = log.length;
+              log = log.slice(0, tableEnd) + "\n" + entry + log.slice(tableEnd);
+              added++;
+            }
+          }
+        }
+
+        if (added > 0) {
+          fs.writeFileSync(CAPACITY_LOG, log);
+          console.log(`📋 Logged ${added} capacity event${added > 1 ? "s" : ""} to Capacity Log`);
+        }
+      }
+    } catch (err: any) {
+      console.error(`⚠ Could not update Capacity Log: ${err.message}`);
     }
   }
 
-  // Send summary to Pronto (Utah team chat)
-  if (process.env.PRONTO_API_TOKEN && process.env.PRONTO_UTAH_CHAT_ID) {
-    const lines: string[] = [];
-
-    // Header
-    lines.push(`📊 Hello Sugar Utah — Daily Brief`);
-    lines.push(`${dayName}\n`);
-
-    // Action Items
-    lines.push(`🎯 ACTION ITEMS`);
-    if (recommendations.length === 0) {
-      lines.push(`✅ No urgent actions needed today.`);
-    } else {
-      for (const rec of recommendations) {
-        lines.push(`• ${rec}`);
-      }
-    }
-
-    // Portfolio Snapshot
-    lines.push(`\n📈 PORTFOLIO SNAPSHOT`);
-    lines.push(`Yesterday: ${portfolioYesterday} bookings (${formatPercent(velocityDelta)} vs avg) | ${newClientsYesterday} new clients`);
-    lines.push(`Utilization: ${avgPastUtil}% (last 7d) → ${avgFutureUtil}% (next 7d)`);
-    if (adData) {
-      lines.push(`Ads: $${adData.totalSpend.toFixed(0)} spent → ${adData.totalBookings} bookings → $${adData.overallCPB.toFixed(2)} CPB`);
-    }
-
-    // Capacity Alerts
-    if (allAlerts.length > 0) {
-      lines.push(`\n🚨 CAPACITY ALERTS (≥75%)`);
-      for (const alert of allAlerts.slice(0, 5)) {
-        lines.push(`• ${alert.location} | ${alert.day} ${alert.bucket} | ${alert.util}%`);
-      }
-    }
-
-    // Booking Velocity by Location
-    lines.push(`\n📅 BOOKING VELOCITY`);
-    for (const loc of sortedByBookings) {
-      const delta = loc.bookings7DayAvg > 0 ? Math.round(((loc.bookingsYesterday - loc.bookings7DayAvg) / loc.bookings7DayAvg) * 100) : 0;
-      const emoji = delta > 20 ? "🚀" : delta < -20 ? "⚠️" : "➡️";
-      lines.push(`${emoji} ${loc.shortName}: ${loc.bookingsYesterday} (${formatPercent(delta)}) | ${loc.newClientsYesterday} new`);
-    }
-
-    // Month-over-Month Revenue
-    lines.push(`\n📊 MONTH-OVER-MONTH`);
-    const sortedByRevenue = [...locationData].sort((a, b) => b.mtdRevenue - a.mtdRevenue);
-    for (const loc of sortedByRevenue) {
-      if (loc.mtdAppts === 0 && loc.lmAppts === 0 && loc.mtdRevenue === 0) continue;
-      const mtdRev = loc.mtdRevenue > 0 ? `$${(loc.mtdRevenue / 1000).toFixed(1)}k` : "—";
-      const lmRev = loc.lmRevenue > 0 ? `$${(loc.lmRevenue / 1000).toFixed(1)}k` : "—";
-      const revIcon = loc.mtdRevenue >= loc.lmRevenue ? "🟢" : "🔴";
-      lines.push(`${revIcon} ${loc.shortName}: ${mtdRev}/${lmRev} rev | ${loc.mtdAppts}/${loc.lmAppts} appts | ${loc.mtdNew}/${loc.lmNew} new`);
-    }
-
-    // Utilization Comparison
-    lines.push(`\n🏆 UTILIZATION`);
-    for (const loc of locationData) {
-      const trendEmoji = loc.utilizationTrend === null ? "—" :
-        loc.utilizationTrend > 5 ? "📈" : loc.utilizationTrend < -5 ? "📉" : "➡️";
-      lines.push(`${loc.shortName}: ${loc.pastUtilization}% → ${loc.utilization}% ${trendEmoji}`);
-    }
-
-    // Ad Performance by Location
-    if (adData && adData.locations.length > 0) {
-      lines.push(`\n💰 ADS BY LOCATION`);
-      lines.push(`Google: $${adData.totalGoogleSpend.toFixed(0)} → ${adData.totalGoogleBookings}bk ($${adData.googleCPB.toFixed(2)} CPB)`);
-      lines.push(`Meta: $${adData.totalMetaSpend.toFixed(0)} → ${adData.totalMetaBookings}bk ($${adData.metaCPB.toFixed(2)} CPB)`);
-      for (const loc of adData.locations.sort((a, b) => b.totalSpend - a.totalSpend)) {
-        const gCpb = loc.google.costPerBooking > 0 ? `$${loc.google.costPerBooking.toFixed(0)}` : "—";
-        const mCpb = loc.meta.costPerBooking > 0 ? `$${loc.meta.costPerBooking.toFixed(0)}` : "—";
-        lines.push(`• ${loc.shortName}: G $${loc.google.spend.toFixed(0)}/${loc.google.bookings}bk (${gCpb}) | M $${loc.meta.spend.toFixed(0)}/${loc.meta.bookings}bk (${mCpb})`);
-      }
-    }
-
-    // MCR by Location
-    if (locationsWithMcr.length > 0) {
-      lines.push(`\n🎯 MCR% (Membership Conversion)`);
-      for (const loc of locationsWithMcr.sort((a, b) => b.locationMcr.mcr - a.locationMcr.mcr)) {
-        const emoji = loc.locationMcr.mcr >= 50 ? "🟢" : loc.locationMcr.mcr >= 25 ? "🟡" : "🔴";
-        lines.push(`${emoji} ${loc.shortName}: ${loc.locationMcr.mcr}% (${loc.locationMcr.memberships}/${loc.locationMcr.newClients})`);
-      }
-    }
-
-    // MCR by Esthetician
-    const combinedStaffForPronto = (bqData.combinedStaffMcr || [])
-      .map((s: Record<string, unknown>) => ({
-        name: s.staff as string,
-        newClients: Number(s.new_clients),
-        memberships: Number(s.memberships),
-        mcr: Number(s.mcr_pct) || 0,
-      }))
-      .sort((a: { mcr: number }, b: { mcr: number }) => b.mcr - a.mcr);
-
-    if (combinedStaffForPronto.length > 0) {
-      lines.push(`\nMCR by Esthetician:`);
-      for (const staff of combinedStaffForPronto) {
-        const emoji = staff.mcr >= 50 ? "🟢" : staff.mcr >= 25 ? "🟡" : "🔴";
-        lines.push(`${emoji} ${staff.name}: ${staff.mcr}% (${staff.memberships}/${staff.newClients})`);
-      }
-    }
-
-    // Membership Churn
-    if (yesterdayChurn.length > 0) {
-      lines.push(`\n📉 YESTERDAY'S CHURN`);
-      for (const c of yesterdayChurn) {
-        const shortLoc = Object.entries(LOCATION_NAME_MAP).find(([_, bq]) => bq === c.location)?.[0] || c.location;
-        lines.push(`• ${shortLoc} | ${c.client} | ${c.membership} | ${c.months} mo | ${c.reason || "No reason"}`);
-      }
-    }
-
-    // Early Churn by Esthetician
-    if (earlyChurnByStaff.length > 0) {
-      lines.push(`\n⚠️ EARLY CHURN BY ESTHETICIAN (MTD)`);
-      for (const e of earlyChurnByStaff) {
-        const shortLoc = Object.entries(LOCATION_NAME_MAP).find(([_, bq]) => bq === e.location)?.[0] || e.location;
-        lines.push(`• ${e.staff} (${shortLoc}): ${e.early_churns} early | avg ${e.avg_tenure} mo`);
-      }
-    }
-
-    // Missed Expectations
-    if (missedExpectations.length > 0) {
-      lines.push(`\n🚨 MISSED EXPECTATIONS`);
-      for (const m of missedExpectations) {
-        const shortLoc = Object.entries(LOCATION_NAME_MAP).find(([_, bq]) => bq === m.location)?.[0] || m.location;
-        const dateStr = m.date?.value || m.date;
-        lines.push(`• ${dateStr} | ${shortLoc} | ${m.client} | ${m.months} mo | Staff: ${m.last_staff || "Unknown"}`);
-      }
-    }
-
-    // Long-Tenure Losses
-    if (longTenureLosses.length > 0) {
-      lines.push(`\n💔 LONG-TENURE LOSSES (6+ mo)`);
-      for (const l of longTenureLosses) {
-        const shortLoc = Object.entries(LOCATION_NAME_MAP).find(([_, bq]) => bq === l.location)?.[0] || l.location;
-        const ltvStr = l.ltv ? `$${Number(l.ltv).toLocaleString()}` : "$0";
-        lines.push(`• ${shortLoc} | ${l.client} | ${ltvStr} LTV | ${l.months} mo | ${l.reason || "No reason"}`);
-      }
-    }
-
-    const summary = lines.join("\n");
-
+  // Post to Pronto (only for live runs, not backfills)
+  if (!targetDateStr) {
     try {
-      await sendProntoMessage({
-        chatId: process.env.PRONTO_UTAH_CHAT_ID,
-        message: summary,
-        token: process.env.PRONTO_API_TOKEN,
-      });
-      console.log(`\n✅ Sent summary to Pronto`);
-    } catch (err: unknown) {
-      const msg = err instanceof Error ? err.message : String(err);
-      console.error(`\n❌ Pronto send failed: ${msg}`);
+      const prontoLines: string[] = [];
+      prontoLines.push(`📋 UTAH ACTION ITEMS — ${dayName.toUpperCase()}`);
+      prontoLines.push(``);
+
+      // Portfolio snapshot
+      prontoLines.push(`📊 PORTFOLIO SNAPSHOT`);
+      prontoLines.push(`Yesterday: ${portfolioYesterday} bookings (${formatPercent(velocityDelta)} vs avg), ${newClientsYesterday} new clients`);
+      prontoLines.push(`Utilization: ${avgPastUtil}% actual (last 7d) → ${avgFutureUtil}% forecast (next 7d)`);
+      if (adData) {
+        prontoLines.push(`Ad spend: $${adData.totalSpend.toFixed(0)} → $${adData.overallCPB.toFixed(2)} CPB`);
+      }
+      prontoLines.push(``);
+
+      // Capacity alerts
+      const prontoAlerts: string[] = [];
+      for (const loc of locationData) {
+        for (const d of loc.futureDailyUtil) {
+          for (const [label, bucket] of [["8a-2p", d.am], ["2p-8p", d.pm]] as const) {
+            const avail = Math.max(0, bucket.scheduledMin - bucket.blockedMin);
+            if (bucket.utilization >= 75 && avail > 60) {
+              prontoAlerts.push(`   → ${loc.shortName.toUpperCase()} ${d.dayName} ${d.dateStr.slice(5)} ${label} — ${bucket.utilization}% booked`);
+            }
+          }
+        }
+      }
+      if (prontoAlerts.length > 0) {
+        prontoLines.push(`🚨 CAPACITY — Add coverage or open waitlist:`);
+        prontoLines.push(...prontoAlerts);
+        prontoLines.push(``);
+      }
+
+      // Ad alerts
+      if (adData && adData.alerts.length > 0) {
+        prontoLines.push(`💰 ADS — Review campaigns:`);
+        for (const alert of adData.alerts) {
+          prontoLines.push(`   → ${alert}`);
+        }
+        prontoLines.push(`     ACTION: Check targeting, pause underperformers`);
+        prontoLines.push(``);
+      }
+
+      // Retention
+      if (retentionForPronto.length > 0) {
+        prontoLines.push(`💔 RETENTION — Win back these clients:`);
+        prontoLines.push(``);
+        for (const r of retentionForPronto) {
+          const clientUrl = r.clientId ? `https://dashboard.boulevard.io/clients/${r.clientId}` : null;
+          prontoLines.push(`   ${r.client.toUpperCase()} (${r.location}) — $${r.ltv.toLocaleString()} LTV | Tier ${r.offer.tier}`);
+          if (clientUrl) prontoLines.push(`   🔗 ${clientUrl}`);
+          prontoLines.push(`   📧 ${r.email}`);
+          prontoLines.push(`   Cancelled: ${r.churnDate} | Last visit: ${r.lastAppt}`);
+          prontoLines.push(`   Reason: ${r.reason}`);
+          prontoLines.push(`   OFFER ONE:`);
+          for (const opt of r.offer.options.slice(0, 3)) {
+            prontoLines.push(`      • ${opt}`);
+          }
+          prontoLines.push(``);
+        }
+      }
+
+      const prontoMessage = prontoLines.join("\n").trim();
+      if (prontoMessage) {
+        await postToPronto(prontoMessage);
+        console.log(`📱 Posted to Pronto (Utah chat)`);
+      }
+    } catch (err: any) {
+      console.error(`⚠ Could not post to Pronto: ${err.message}`);
     }
   }
 }
