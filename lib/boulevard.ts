@@ -1045,23 +1045,41 @@ export async function executeBTBActions(
   const staffName = analysis.shift.staffMember.displayName || analysis.shift.staffMember.name;
   const staffId = analysis.shift.staffMember.id.replace("urn:blvd:Staff:", "");
 
-  // Helper to check if ANY timeblock overlaps with the proposed time range for this staff
-  // This prevents creating BTB on top of DNB, LUNCH, or any other block
-  const blockOverlapsRange = (proposedStart: Date, proposedDurationMinutes: number): boolean => {
+  // Helper to check if ANY timeblock overlaps with the proposed time range for this staff.
+  // Checks BOTH the pre-fetched list AND does a fresh API query to catch blocks
+  // that may not have been in the original paginated fetch.
+  const blockOverlapsRange = async (proposedStart: Date, proposedDurationMinutes: number): Promise<boolean> => {
     const proposedStartMs = proposedStart.getTime();
     const proposedEndMs = proposedStartMs + proposedDurationMinutes * 60 * 1000;
 
-    return existingTimeblocks.some(tb => {
+    // 1. Check pre-fetched list first (fast path)
+    const localOverlap = existingTimeblocks.some(tb => {
       const tbStaffId = tb.staff?.id?.replace("urn:blvd:Staff:", "") || "";
       if (tbStaffId !== staffId) return false;
-
       const tbStart = new Date(tb.startAt).getTime();
       const tbEnd = new Date(tb.endAt).getTime();
-
-      // Check for any overlap between the two time ranges
-      // Overlap exists if: proposedStart < tbEnd AND proposedEnd > tbStart
       return proposedStartMs < tbEnd && proposedEndMs > tbStart;
     });
+    if (localOverlap) return true;
+
+    // 2. Fresh API check — re-fetch timeblocks for this location to catch
+    //    blocks that pagination may have missed
+    try {
+      const locationId = analysis.shift.locationId;
+      const freshBlocks = await getTimeblocks(locationId);
+      const remoteOverlap = freshBlocks.some(tb => {
+        const tbStaffId = tb.staff?.id?.replace("urn:blvd:Staff:", "") || "";
+        if (tbStaffId !== staffId) return false;
+        const tbStart = new Date(tb.startAt).getTime();
+        const tbEnd = new Date(tb.endAt).getTime();
+        return proposedStartMs < tbEnd && proposedEndMs > tbStart;
+      });
+      if (remoteOverlap) return true;
+    } catch {
+      // If fresh fetch fails, rely on pre-fetched data only
+    }
+
+    return false;
   };
 
   // Remove BTB blocks
@@ -1104,7 +1122,7 @@ export async function executeBTBActions(
 
   if (analysis.startBlockShouldAdd) {
     const startTimeDate = new Date(analysis.shift.startAt);
-    if (blockOverlapsRange(startTimeDate, config.btbDurationMinutes)) {
+    if (await blockOverlapsRange(startTimeDate, config.btbDurationMinutes)) {
       // Skip - would overlap with existing block (DNB, lunch, another BTB, etc.)
     } else {
       try {
@@ -1137,7 +1155,7 @@ export async function executeBTBActions(
     // End BTB starts btbDurationMinutes before shift end
     const shiftEnd = new Date(analysis.shift.endAt);
     const startTimeDate = new Date(shiftEnd.getTime() - config.btbDurationMinutes * 60 * 1000);
-    if (blockOverlapsRange(startTimeDate, config.btbDurationMinutes)) {
+    if (await blockOverlapsRange(startTimeDate, config.btbDurationMinutes)) {
       // Skip - would overlap with existing block (DNB, lunch, another BTB, etc.)
     } else {
       try {
