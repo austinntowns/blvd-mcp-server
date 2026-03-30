@@ -29,7 +29,9 @@
     "btb:server": "tsx admin-server.ts",
     "btb:daily": "tsx scripts/add-btb-daily.ts",
     "btb:bootstrap": "tsx scripts/add-btb-daily.ts --bootstrap",
-    "btb:webhooks": "tsx scripts/setup-webhooks.ts"
+    "btb:webhooks": "tsx scripts/setup-webhooks.ts",
+    "brief": "tsx scripts/daily-brief-v4.ts",
+    "brief:trigger": "tsx scripts/trigger-brief.ts"
   },
   "dependencies": {
     "@google-cloud/bigquery": "^8.1.1",
