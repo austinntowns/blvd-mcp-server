@@ -1,4 +1,5 @@
 import { GraphQLClient, gql } from "graphql-request";
+import { readFileSync, existsSync } from "fs";
 import crypto from "crypto";
 
 const BLVD_API_URL =
@@ -412,7 +413,8 @@ export async function getShifts(
   locationId: string,
   startDate: string,
   endDate: string,
-  staffIds?: string[]
+  staffIds?: string[],
+  existingStaffMap?: Map<string, StaffMember>
 ): Promise<StaffShift[]> {
   const client = getClient();
 
@@ -426,12 +428,16 @@ export async function getShifts(
     staffIds,
   });
 
-  // Get staff members to look up names
-  const staffList = await getStaff(locationId);
-  // Create map with normalized IDs (strip URN prefix) for lookup
-  const staffMap = new Map(
-    staffList.map((s) => [s.id.replace("urn:blvd:Staff:", ""), s])
-  );
+  // Use provided staff map or fetch fresh
+  let staffMap: Map<string, StaffMember>;
+  if (existingStaffMap) {
+    staffMap = existingStaffMap;
+  } else {
+    const staffList = await getStaff(locationId);
+    staffMap = new Map(
+      staffList.map((s) => [s.id.replace("urn:blvd:Staff:", ""), s])
+    );
+  }
 
   // Expand templates into actual shifts for each date in range
   const shifts: StaffShift[] = [];
@@ -685,7 +691,9 @@ interface TimeblocksResponse {
 
 export async function getTimeblocks(
   locationId: string,
-  staffId?: string
+  staffId?: string,
+  startDate?: string,
+  endDate?: string
 ): Promise<Timeblock[]> {
   const client = getClient();
   const allTimeblocks: Timeblock[] = [];
@@ -749,6 +757,16 @@ export async function getTimeblocks(
     hasNextPage = data.timeblocks.pageInfo.hasNextPage;
     cursor = data.timeblocks.pageInfo.endCursor;
     pageCount++;
+  }
+
+  // Client-side date filtering (Boulevard has no server-side date filter)
+  if (startDate || endDate) {
+    const startTime = startDate ? new Date(startDate + "T00:00:00").getTime() : -Infinity;
+    const endTime = endDate ? new Date(endDate + "T23:59:59").getTime() : Infinity;
+    return allTimeblocks.filter((tb) => {
+      const tbStart = new Date(tb.startAt).getTime();
+      return tbStart >= startTime && tbStart <= endTime;
+    });
   }
 
   return allTimeblocks;
@@ -1036,170 +1054,182 @@ export function analyzeBTBBlocks(
 }
 
 /**
- * Execute BTB management actions for a single analysis result
- * Returns summary of actions taken
- *
- * @param existingTimeblocks - Pass current timeblocks to prevent creating duplicates
+ * Execute BTB removal actions for a single analysis result.
+ * Creation is handled by createBTBIfAllowed() — this only does removals.
  */
-export async function executeBTBActions(
+export async function executeBTBRemovals(
   analysis: BTBAnalysisResult,
-  config: BTBCleanupConfig = DEFAULT_BTB_CONFIG,
-  existingTimeblocks: Timeblock[] = []
 ): Promise<{
   removed: string[];
-  added: string[];
   errors: string[];
 }> {
   const removed: string[] = [];
-  const added: string[] = [];
   const errors: string[] = [];
 
   const staffName = analysis.shift.staffMember.displayName || analysis.shift.staffMember.name;
-  const staffId = analysis.shift.staffMember.id.replace("urn:blvd:Staff:", "");
 
-  // Helper to check if ANY timeblock overlaps with the proposed time range for this staff.
-  // Checks BOTH the pre-fetched list AND does a fresh API query to catch blocks
-  // that may not have been in the original paginated fetch.
-  const blockOverlapsRange = async (proposedStart: Date, proposedDurationMinutes: number): Promise<boolean> => {
-    const proposedStartMs = proposedStart.getTime();
-    const proposedEndMs = proposedStartMs + proposedDurationMinutes * 60 * 1000;
-
-    // 1. Check pre-fetched list first (fast path)
-    const localOverlap = existingTimeblocks.some(tb => {
-      const tbStaffId = tb.staff?.id?.replace("urn:blvd:Staff:", "") || "";
-      if (tbStaffId !== staffId) return false;
-      const tbStart = new Date(tb.startAt).getTime();
-      const tbEnd = new Date(tb.endAt).getTime();
-      return proposedStartMs < tbEnd && proposedEndMs > tbStart;
-    });
-    if (localOverlap) return true;
-
-    // 2. Fresh API check — re-fetch timeblocks for this location to catch
-    //    blocks that pagination may have missed
-    try {
-      const locationId = analysis.shift.locationId;
-      const freshBlocks = await getTimeblocks(locationId);
-      const remoteOverlap = freshBlocks.some(tb => {
-        const tbStaffId = tb.staff?.id?.replace("urn:blvd:Staff:", "") || "";
-        if (tbStaffId !== staffId) return false;
-        const tbStart = new Date(tb.startAt).getTime();
-        const tbEnd = new Date(tb.endAt).getTime();
-        return proposedStartMs < tbEnd && proposedEndMs > tbStart;
-      });
-      if (remoteOverlap) return true;
-    } catch {
-      // If fresh fetch fails, rely on pre-fetched data only
-    }
-
-    return false;
-  };
-
-  // Remove BTB blocks
   if (analysis.startBlockShouldRemove && analysis.startBlock) {
     try {
       await deleteTimeblock(analysis.startBlock.id);
-      removed.push(`${staffName}: removed start BTB`);
-    } catch (err: any) {
-      errors.push(`${staffName}: failed to remove start BTB - ${err.message}`);
+      removed.push(`${staffName}: removed start BTB (gap=${analysis.startGapMinutes}min, util=${analysis.utilizationPercent}%)`);
+    } catch (err: unknown) {
+      const msg = err instanceof Error ? err.message : String(err);
+      errors.push(`${staffName}: failed to remove start BTB - ${msg}`);
     }
   }
 
   if (analysis.endBlockShouldRemove && analysis.endBlock) {
     try {
       await deleteTimeblock(analysis.endBlock.id);
-      removed.push(`${staffName}: removed end BTB`);
-    } catch (err: any) {
-      errors.push(`${staffName}: failed to remove end BTB - ${err.message}`);
+      removed.push(`${staffName}: removed end BTB (gap=${analysis.endGapMinutes}min, util=${analysis.utilizationPercent}%)`);
+    } catch (err: unknown) {
+      const msg = err instanceof Error ? err.message : String(err);
+      errors.push(`${staffName}: failed to remove end BTB - ${msg}`);
     }
   }
 
-  // Add BTB blocks
-  // Helper to format time as ISO string with proper timezone
-  // Shift times come as "2026-03-23T08:00:00" without TZ, need full ISO format
-  const formatTimeForAPI = (timeStr: string): string => {
-    // If already has timezone, return as-is
-    if (timeStr.includes("Z") || timeStr.includes("+") || timeStr.includes("-", 10)) {
-      return timeStr;
-    }
-    // Parse and convert to full ISO string (will be in local TZ then converted to UTC)
-    const date = new Date(timeStr);
-    return date.toISOString();
-  };
-
-  // Helper to ensure ID has URN prefix
-  const ensureURN = (id: string, type: "Location" | "Staff"): string => {
-    if (id.startsWith("urn:blvd:")) return id;
-    return `urn:blvd:${type}:${id}`;
-  };
-
-  if (analysis.startBlockShouldAdd) {
-    const startTimeDate = new Date(analysis.shift.startAt);
-    if (await blockOverlapsRange(startTimeDate, config.btbDurationMinutes)) {
-      // Skip - would overlap with existing block (DNB, lunch, another BTB, etc.)
-    } else {
-      try {
-        const startTime = formatTimeForAPI(analysis.shift.startAt);
-        await createTimeblock({
-          locationId: ensureURN(analysis.shift.locationId, "Location"),
-          staffId: ensureURN(analysis.shift.staffMember.id, "Staff"),
-          startTime,
-          duration: config.btbDurationMinutes,
-          title: "Auto - BTB",
-          reason: "PERSONAL",
-        });
-        added.push(`${staffName}: added start BTB (${config.btbDurationMinutes}min)`);
-        // Add to existing list to prevent duplicates in same batch
-        existingTimeblocks.push({
-          id: "pending",
-          startAt: startTime,
-          endAt: new Date(startTimeDate.getTime() + config.btbDurationMinutes * 60 * 1000).toISOString(),
-          duration: config.btbDurationMinutes,
-          title: "Auto - BTB",
-          staff: { id: analysis.shift.staffMember.id, name: staffName },
-        });
-      } catch (err: any) {
-        errors.push(`${staffName}: failed to add start BTB - ${err.message}`);
-      }
-    }
-  }
-
-  if (analysis.endBlockShouldAdd) {
-    // End BTB starts btbDurationMinutes before shift end
-    const shiftEnd = new Date(analysis.shift.endAt);
-    const startTimeDate = new Date(shiftEnd.getTime() - config.btbDurationMinutes * 60 * 1000);
-    if (await blockOverlapsRange(startTimeDate, config.btbDurationMinutes)) {
-      // Skip - would overlap with existing block (DNB, lunch, another BTB, etc.)
-    } else {
-      try {
-        await createTimeblock({
-          locationId: ensureURN(analysis.shift.locationId, "Location"),
-          staffId: ensureURN(analysis.shift.staffMember.id, "Staff"),
-          startTime: startTimeDate.toISOString(),
-          duration: config.btbDurationMinutes,
-          title: "Auto - BTB",
-          reason: "PERSONAL",
-        });
-        added.push(`${staffName}: added end BTB (${config.btbDurationMinutes}min)`);
-        // Add to existing list to prevent duplicates in same batch
-        existingTimeblocks.push({
-          id: "pending",
-          startAt: startTimeDate.toISOString(),
-          endAt: shiftEnd.toISOString(),
-          duration: config.btbDurationMinutes,
-          title: "Auto - BTB",
-          staff: { id: analysis.shift.staffMember.id, name: staffName },
-        });
-      } catch (err: any) {
-        errors.push(`${staffName}: failed to add end BTB - ${err.message}`);
-      }
-    }
-  }
-
-  return { removed, added, errors };
+  return { removed, errors };
 }
 
 /**
- * Get timeblocks filtered by date range
+ * @deprecated Use executeBTBRemovals() for removals and createBTBIfAllowed() for additions.
+ */
+export async function executeBTBActions(
+  analysis: BTBAnalysisResult,
+  _config: BTBCleanupConfig = DEFAULT_BTB_CONFIG,
+  _existingTimeblocks: Timeblock[] = []
+): Promise<{ removed: string[]; added: string[]; errors: string[] }> {
+  const { removed, errors } = await executeBTBRemovals(analysis);
+  return { removed, added: [], errors };
+}
+
+// ═══════════════════════════════════════════════════════════════════════════
+// RULES ENGINE
+// ═══════════════════════════════════════════════════════════════════════════
+
+export interface BTBRule {
+  id: string;
+  minGap: number;
+  maxGap: number | null;
+  btbDuration: number;
+  label: string;
+  enabled: boolean;
+}
+
+const DEFAULT_RULES: BTBRule[] = [
+  { id: "rule-1", minGap: 120, maxGap: null, btbDuration: 60, label: "Large gap (2h+)", enabled: true },
+  { id: "rule-2", minGap: 90, maxGap: 119, btbDuration: 30, label: "Medium gap (90-119min)", enabled: true },
+  { id: "rule-3", minGap: 60, maxGap: 89, btbDuration: 15, label: "Small gap (60-89min)", enabled: true },
+];
+
+export function loadRules(rulesFilePath: string): BTBRule[] {
+  try {
+    if (existsSync(rulesFilePath)) {
+      const data = JSON.parse(readFileSync(rulesFilePath, "utf-8"));
+      return data.rules || DEFAULT_RULES;
+    }
+  } catch (e) {
+    console.error("Error reading rules file:", e);
+  }
+  return DEFAULT_RULES;
+}
+
+export function matchRule(gapMinutes: number, rules: BTBRule[]): BTBRule | null {
+  for (const rule of rules) {
+    if (!rule.enabled) continue;
+    if (gapMinutes >= rule.minGap && (rule.maxGap === null || gapMinutes <= rule.maxGap)) {
+      return rule;
+    }
+  }
+  return null;
+}
+
+// ═══════════════════════════════════════════════════════════════════════════
+// UNIFIED BTB CREATION
+// ═══════════════════════════════════════════════════════════════════════════
+
+/**
+ * Single entry point for creating BTBs. Uses rules engine for duration,
+ * checks all block overlaps before creating. No fallback to flat config.
+ */
+export async function createBTBIfAllowed(opts: {
+  shift: StaffShift;
+  position: "start" | "end";
+  gapMinutes: number;
+  rules: BTBRule[];
+  existingTimeblocks: Timeblock[];
+  locationId: string;
+}): Promise<{ added: string | null; error: string | null }> {
+  const { shift, position, gapMinutes, rules, existingTimeblocks, locationId } = opts;
+  const staffName = shift.staffMember.displayName || shift.staffMember.name;
+  const staffId = shift.staffMember.id.replace("urn:blvd:Staff:", "");
+
+  // 1. Match rule — no match = no BTB
+  const rule = matchRule(gapMinutes, rules);
+  if (!rule) {
+    return { added: null, error: null };
+  }
+
+  // 2. Calculate proposed time
+  let proposedStart: Date;
+  if (position === "start") {
+    proposedStart = new Date(shift.startAt);
+  } else {
+    const shiftEnd = new Date(shift.endAt);
+    proposedStart = new Date(shiftEnd.getTime() - rule.btbDuration * 60 * 1000);
+  }
+  const proposedEnd = new Date(proposedStart.getTime() + rule.btbDuration * 60 * 1000);
+
+  // 3. Check overlap against ALL existing blocks for this staff
+  const proposedStartMs = proposedStart.getTime();
+  const proposedEndMs = proposedEnd.getTime();
+
+  const overlaps = existingTimeblocks.some((tb) => {
+    const tbStaffId = tb.staff?.id?.replace("urn:blvd:Staff:", "") || "";
+    if (tbStaffId !== staffId) return false;
+    const tbStart = new Date(tb.startAt).getTime();
+    const tbEnd = new Date(tb.endAt).getTime();
+    return proposedStartMs < tbEnd && proposedEndMs > tbStart;
+  });
+
+  if (overlaps) {
+    return { added: null, error: null }; // not an error, just skipped
+  }
+
+  // 4. Create the block
+  try {
+    const ensureURN = (id: string, type: "Location" | "Staff"): string =>
+      id.startsWith("urn:blvd:") ? id : `urn:blvd:${type}:${id}`;
+
+    await createTimeblock({
+      locationId: ensureURN(locationId, "Location"),
+      staffId: ensureURN(shift.staffMember.id, "Staff"),
+      startTime: proposedStart.toISOString(),
+      duration: rule.btbDuration,
+      title: "Auto - BTB",
+      reason: "PERSONAL",
+    });
+
+    // 5. Push synthetic entry to prevent same-batch duplicates
+    existingTimeblocks.push({
+      id: "pending",
+      startAt: proposedStart.toISOString(),
+      endAt: proposedEnd.toISOString(),
+      duration: rule.btbDuration,
+      title: "Auto - BTB",
+      staff: { id: shift.staffMember.id, name: staffName },
+    });
+
+    const msg = `${staffName}: ${position} BTB added (${rule.btbDuration}min, ${gapMinutes}min gap, ${rule.label})`;
+    return { added: msg, error: null };
+  } catch (err: unknown) {
+    const msg = err instanceof Error ? err.message : String(err);
+    return { added: null, error: `${staffName}: failed to add ${position} BTB - ${msg}` };
+  }
+}
+
+/**
+ * @deprecated Use getTimeblocks(locationId, staffId, startDate, endDate) instead
  */
 export async function getTimeblocksInRange(
   locationId: string,
@@ -1207,15 +1237,7 @@ export async function getTimeblocksInRange(
   endDate: string,
   staffId?: string
 ): Promise<Timeblock[]> {
-  // Get all timeblocks and filter by date range
-  const allBlocks = await getTimeblocks(locationId, staffId);
-  const startTime = new Date(startDate).getTime();
-  const endTime = new Date(endDate + "T23:59:59").getTime();
-
-  return allBlocks.filter((tb) => {
-    const tbStart = new Date(tb.startAt).getTime();
-    return tbStart >= startTime && tbStart <= endTime;
-  });
+  return getTimeblocks(locationId, staffId, startDate, endDate);
 }
 
 // Utility: Calculate shift utilization
