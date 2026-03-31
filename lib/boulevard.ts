@@ -490,7 +490,9 @@ export async function getAppointments(
   startDate?: string,
   endDate?: string,
   staffId?: string,
-  limit: number = 500
+  // Must paginate ALL results — Boulevard has no server-side date filter,
+  // so a low limit can miss future appointments that appear on later pages.
+  limit: number = 5000
 ): Promise<Appointment[]> {
   const client = getClient();
   const allAppointments: Appointment[] = [];
@@ -576,13 +578,10 @@ export async function getAppointments(
     cursor = data.appointments.pageInfo.endCursor;
     pageCount++;
 
-    // Stop if we've gone past the date range (appointments are likely chronologically ordered)
-    if (endTime && data.appointments.edges.length > 0) {
-      const lastAptTime = new Date(
-        data.appointments.edges[data.appointments.edges.length - 1].node.startAt
-      ).getTime();
-      if (lastAptTime > endTime) break;
-    }
+    // Do NOT early-exit based on date ordering — Boulevard returns appointments
+    // in an undefined order (not necessarily chronological). Stopping early can
+    // miss future appointments on later pages, causing BTBs to be placed on
+    // shifts that already have bookings.
   }
 
   return allAppointments;
