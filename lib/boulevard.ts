@@ -944,34 +944,31 @@ export function analyzeBTBBlocks(
   };
 
   // REMOVE BTB blocks when appointments are close — regardless of utilization.
-  // A BTB that was placed when the shift was empty should be removed once a
-  // nearby appointment is booked, even if utilization is still low.
-  if (startBlock && shiftAppointments.length > 0) {
-    const blockEnd = new Date(startBlock.endAt).getTime();
-    const firstAptStart = new Date(shiftAppointments[0].startAt).getTime();
-    const gapMinutes = (firstAptStart - blockEnd) / (1000 * 60);
+  // REMOVE BTB: only when utilization >= threshold AND appointment is close
+  if (utilizationPercent >= config.utilizationThreshold) {
+    if (startBlock && shiftAppointments.length > 0) {
+      const blockEnd = new Date(startBlock.endAt).getTime();
+      const firstAptStart = new Date(shiftAppointments[0].startAt).getTime();
+      const gapMinutes = (firstAptStart - blockEnd) / (1000 * 60);
 
-    result.startGapMinutes = Math.round(gapMinutes);
+      result.startGapMinutes = Math.round(gapMinutes);
 
-    // Remove if appointment is within minGapMinutes of the block end,
-    // OR if appointment overlaps/precedes the block
-    if (gapMinutes < config.minGapMinutes) {
-      result.startBlockShouldRemove = true;
+      if (gapMinutes < config.minGapMinutes) {
+        result.startBlockShouldRemove = true;
+      }
     }
-  }
 
-  if (endBlock && shiftAppointments.length > 0) {
-    const blockStart = new Date(endBlock.startAt).getTime();
-    const lastApt = shiftAppointments[shiftAppointments.length - 1];
-    const lastAptEnd = new Date(lastApt.endAt).getTime();
-    const gapMinutes = (blockStart - lastAptEnd) / (1000 * 60);
+    if (endBlock && shiftAppointments.length > 0) {
+      const blockStart = new Date(endBlock.startAt).getTime();
+      const lastApt = shiftAppointments[shiftAppointments.length - 1];
+      const lastAptEnd = new Date(lastApt.endAt).getTime();
+      const gapMinutes = (blockStart - lastAptEnd) / (1000 * 60);
 
-    result.endGapMinutes = Math.round(gapMinutes);
+      result.endGapMinutes = Math.round(gapMinutes);
 
-    // Remove if appointment is within minGapMinutes of the block start,
-    // OR if appointment overlaps/extends past the block
-    if (gapMinutes < config.minGapMinutes) {
-      result.endBlockShouldRemove = true;
+      if (gapMinutes < config.minGapMinutes) {
+        result.endBlockShouldRemove = true;
+      }
     }
   }
 
