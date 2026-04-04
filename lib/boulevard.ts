@@ -961,32 +961,55 @@ export function analyzeBTBBlocks(
     lastAppointmentEnd: shiftAppointments[shiftAppointments.length - 1]?.endAt,
   };
 
-  // REMOVE BTB blocks when appointments are close — regardless of utilization.
-  // REMOVE BTB: only when utilization >= threshold AND appointment is close
-  if (utilizationPercent >= config.utilizationThreshold) {
-    if (startBlock && shiftAppointments.length > 0) {
-      const blockEnd = new Date(startBlock.endAt).getTime();
-      const firstAptStart = new Date(shiftAppointments[0].startAt).getTime();
-      const gapMinutes = (firstAptStart - blockEnd) / (1000 * 60);
+  // REMOVE BTB blocks:
+  // 1. ALWAYS remove if an appointment overlaps the BTB block itself
+  // 2. Remove if utilization >= threshold AND appointment is close (gap-based)
+  if (startBlock && shiftAppointments.length > 0) {
+    const blockStart = new Date(startBlock.startAt).getTime();
+    const blockEnd = new Date(startBlock.endAt).getTime();
+    const firstAptStart = new Date(shiftAppointments[0].startAt).getTime();
+    const gapMinutes = (firstAptStart - blockEnd) / (1000 * 60);
 
-      result.startGapMinutes = Math.round(gapMinutes);
+    result.startGapMinutes = Math.round(gapMinutes);
 
-      if (gapMinutes < config.minGapMinutes) {
-        result.startBlockShouldRemove = true;
-      }
+    // Check if ANY appointment overlaps this BTB block
+    const hasOverlap = shiftAppointments.some(apt => {
+      const aptStart = new Date(apt.startAt).getTime();
+      const aptEnd = new Date(apt.endAt).getTime();
+      return aptStart < blockEnd && aptEnd > blockStart;
+    });
+
+    if (hasOverlap) {
+      // Always remove — appointment is booked during the BTB block
+      result.startBlockShouldRemove = true;
+    } else if (utilizationPercent >= config.utilizationThreshold && gapMinutes < config.minGapMinutes) {
+      // Gap-based removal still requires utilization threshold
+      result.startBlockShouldRemove = true;
     }
+  }
 
-    if (endBlock && shiftAppointments.length > 0) {
-      const blockStart = new Date(endBlock.startAt).getTime();
-      const lastApt = shiftAppointments[shiftAppointments.length - 1];
-      const lastAptEnd = new Date(lastApt.endAt).getTime();
-      const gapMinutes = (blockStart - lastAptEnd) / (1000 * 60);
+  if (endBlock && shiftAppointments.length > 0) {
+    const blockStart = new Date(endBlock.startAt).getTime();
+    const blockEnd = new Date(endBlock.endAt).getTime();
+    const lastApt = shiftAppointments[shiftAppointments.length - 1];
+    const lastAptEnd = new Date(lastApt.endAt).getTime();
+    const gapMinutes = (blockStart - lastAptEnd) / (1000 * 60);
 
-      result.endGapMinutes = Math.round(gapMinutes);
+    result.endGapMinutes = Math.round(gapMinutes);
 
-      if (gapMinutes < config.minGapMinutes) {
-        result.endBlockShouldRemove = true;
-      }
+    // Check if ANY appointment overlaps this BTB block
+    const hasOverlap = shiftAppointments.some(apt => {
+      const aptStart = new Date(apt.startAt).getTime();
+      const aptEnd = new Date(apt.endAt).getTime();
+      return aptStart < blockEnd && aptEnd > blockStart;
+    });
+
+    if (hasOverlap) {
+      // Always remove — appointment is booked during the BTB block
+      result.endBlockShouldRemove = true;
+    } else if (utilizationPercent >= config.utilizationThreshold && gapMinutes < config.minGapMinutes) {
+      // Gap-based removal still requires utilization threshold
+      result.endBlockShouldRemove = true;
     }
   }
 
@@ -1000,6 +1023,15 @@ export function analyzeBTBBlocks(
     });
   };
 
+  // Helper: check if ANY appointment overlaps a proposed time range
+  const anyAppointmentOverlaps = (proposedStartMs: number, proposedEndMs: number): boolean => {
+    return shiftAppointments.some(apt => {
+      const aptStart = new Date(apt.startAt).getTime();
+      const aptEnd = new Date(apt.endAt).getTime();
+      return proposedStartMs < aptEnd && proposedEndMs > aptStart;
+    });
+  };
+
   // LOW UTILIZATION: Consider adding BTB blocks
   if (utilizationPercent < config.utilizationThreshold) {
     // Only add if shift is long enough (4 hours minimum)
@@ -1009,27 +1041,29 @@ export function analyzeBTBBlocks(
     }
 
     // Check if we should add start BTB
-    // No existing block of ANY type AND (no appointments OR first appointment is >= emptyWindowMinutes from shift start)
+    // No existing block or appointment overlap AND first appointment is far enough from shift start
     if (!startBlock) {
       const proposedEndMs = shiftStart + config.btbDurationMinutes * 60 * 1000;
       const noBlockConflict = !anyBlockOverlaps(shiftStart, proposedEndMs);
+      const noAptConflict = !anyAppointmentOverlaps(shiftStart, proposedEndMs);
       const firstAptFarEnough = shiftAppointments.length === 0 ||
         minutesToFirstAppointment! >= config.emptyWindowMinutes;
 
-      if (noBlockConflict && firstAptFarEnough) {
+      if (noBlockConflict && noAptConflict && firstAptFarEnough) {
         result.startBlockShouldAdd = true;
       }
     }
 
     // Check if we should add end BTB
-    // No existing block of ANY type AND (no appointments OR last appointment ends >= emptyWindowMinutes before shift end)
+    // No existing block or appointment overlap AND last appointment is far enough from shift end
     if (!endBlock) {
       const proposedStartMs = shiftEnd - config.btbDurationMinutes * 60 * 1000;
       const noBlockConflict = !anyBlockOverlaps(proposedStartMs, shiftEnd);
+      const noAptConflict = !anyAppointmentOverlaps(proposedStartMs, shiftEnd);
       const lastAptFarEnough = shiftAppointments.length === 0 ||
         minutesAfterLastAppointment! >= config.emptyWindowMinutes;
 
-      if (noBlockConflict && lastAptFarEnough) {
+      if (noBlockConflict && noAptConflict && lastAptFarEnough) {
         result.endBlockShouldAdd = true;
       }
     }
@@ -1039,13 +1073,13 @@ export function analyzeBTBBlocks(
   // This triggers via webhook when appointments are cancelled/moved
   if (!startBlock && minutesToFirstAppointment !== undefined) {
     const proposedEndMs = shiftStart + config.btbDurationMinutes * 60 * 1000;
-    if (minutesToFirstAppointment >= config.autoAddGapMinutes && !anyBlockOverlaps(shiftStart, proposedEndMs)) {
+    if (minutesToFirstAppointment >= config.autoAddGapMinutes && !anyBlockOverlaps(shiftStart, proposedEndMs) && !anyAppointmentOverlaps(shiftStart, proposedEndMs)) {
       result.startAutoAdd = true;
     }
   }
   if (!endBlock && minutesAfterLastAppointment !== undefined) {
     const proposedStartMs = shiftEnd - config.btbDurationMinutes * 60 * 1000;
-    if (minutesAfterLastAppointment >= config.autoAddGapMinutes && !anyBlockOverlaps(proposedStartMs, shiftEnd)) {
+    if (minutesAfterLastAppointment >= config.autoAddGapMinutes && !anyBlockOverlaps(proposedStartMs, shiftEnd) && !anyAppointmentOverlaps(proposedStartMs, shiftEnd)) {
       result.endAutoAdd = true;
     }
   }

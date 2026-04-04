@@ -2287,51 +2287,76 @@ app.post("/webhook/boulevard", async (c) => {
       if (isCancellation) {
         const startGap = analysis.minutesToFirstAppointment;
         const endGap = analysis.minutesAfterLastAppointment;
+        const shiftStartMs = new Date(shift.startAt).getTime();
+        const shiftEndMs = new Date(shift.endAt).getTime();
+
+        // Helper: check if proposed BTB overlaps any appointment for this staff
+        const wouldOverlapAppointment = (proposedStartMs: number, proposedEndMs: number): boolean => {
+          const staffId = shift.staffMember.id;
+          return appointments.some(apt => {
+            if (apt.cancelled) return false;
+            const matchesStaff = apt.appointmentServices?.some(svc => svc.staff?.id === staffId);
+            if (!matchesStaff) return false;
+            const aptStart = new Date(apt.startAt).getTime();
+            const aptEnd = new Date(apt.endAt).getTime();
+            return proposedStartMs < aptEnd && proposedEndMs > aptStart;
+          });
+        };
 
         // Check start of shift
         if (!analysis.startBlock && startGap !== undefined && startGap >= 90) {
           const btbDuration = startGap >= 120 ? 60 : 30;
-          try {
-            const shiftStart = new Date(shift.startAt);
-            await createTimeblock({
-              locationId,
-              staffId: shift.staffMember.id,
-              startTime: shiftStart.toISOString(),
-              duration: btbDuration,
-              title: "BTB",
-            });
-            addedBlocks.push(
-              `${staffName} start BTB ${btbDuration}min (${startGap}min space)`
-            );
-            console.log(`[Webhook] Added: ${staffName} start BTB (${btbDuration}min for ${startGap}min gap)`);
-          } catch (e) {
-            const errMsg = `Failed to add ${staffName} start BTB: ${e instanceof Error ? e.message : "Unknown"}`;
-            errors.push(errMsg);
-            console.error(`[Webhook] Error: ${errMsg}`);
+          const proposedEndMs = shiftStartMs + btbDuration * 60 * 1000;
+          if (!wouldOverlapAppointment(shiftStartMs, proposedEndMs)) {
+            try {
+              const shiftStart = new Date(shift.startAt);
+              await createTimeblock({
+                locationId,
+                staffId: shift.staffMember.id,
+                startTime: shiftStart.toISOString(),
+                duration: btbDuration,
+                title: "BTB",
+              });
+              addedBlocks.push(
+                `${staffName} start BTB ${btbDuration}min (${startGap}min space)`
+              );
+              console.log(`[Webhook] Added: ${staffName} start BTB (${btbDuration}min for ${startGap}min gap)`);
+            } catch (e) {
+              const errMsg = `Failed to add ${staffName} start BTB: ${e instanceof Error ? e.message : "Unknown"}`;
+              errors.push(errMsg);
+              console.error(`[Webhook] Error: ${errMsg}`);
+            }
+          } else {
+            console.log(`[Webhook] Skipped: ${staffName} start BTB — would overlap appointment`);
           }
         }
 
         // Check end of shift
         if (!analysis.endBlock && endGap !== undefined && endGap >= 90) {
           const btbDuration = endGap >= 120 ? 60 : 30;
-          try {
-            const shiftEnd = new Date(shift.endAt);
-            const btbStart = new Date(shiftEnd.getTime() - btbDuration * 60 * 1000);
-            await createTimeblock({
-              locationId,
-              staffId: shift.staffMember.id,
-              startTime: btbStart.toISOString(),
-              duration: btbDuration,
-              title: "BTB",
-            });
-            addedBlocks.push(
-              `${staffName} end BTB ${btbDuration}min (${endGap}min space)`
-            );
-            console.log(`[Webhook] Added: ${staffName} end BTB (${btbDuration}min for ${endGap}min gap)`);
-          } catch (e) {
-            const errMsg = `Failed to add ${staffName} end BTB: ${e instanceof Error ? e.message : "Unknown"}`;
-            errors.push(errMsg);
-            console.error(`[Webhook] Error: ${errMsg}`);
+          const proposedStartMs = shiftEndMs - btbDuration * 60 * 1000;
+          if (!wouldOverlapAppointment(proposedStartMs, shiftEndMs)) {
+            try {
+              const shiftEnd = new Date(shift.endAt);
+              const btbStart = new Date(shiftEnd.getTime() - btbDuration * 60 * 1000);
+              await createTimeblock({
+                locationId,
+                staffId: shift.staffMember.id,
+                startTime: btbStart.toISOString(),
+                duration: btbDuration,
+                title: "BTB",
+              });
+              addedBlocks.push(
+                `${staffName} end BTB ${btbDuration}min (${endGap}min space)`
+              );
+              console.log(`[Webhook] Added: ${staffName} end BTB (${btbDuration}min for ${endGap}min gap)`);
+            } catch (e) {
+              const errMsg = `Failed to add ${staffName} end BTB: ${e instanceof Error ? e.message : "Unknown"}`;
+              errors.push(errMsg);
+              console.error(`[Webhook] Error: ${errMsg}`);
+            }
+          } else {
+            console.log(`[Webhook] Skipped: ${staffName} end BTB — would overlap appointment`);
           }
         }
       }
